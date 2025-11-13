@@ -1,0 +1,82 @@
+name: Database Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      action:
+        description: 'Migration action'
+        required: true
+        default: 'up'
+        type: choice
+        options:
+          - up
+          - down
+          - reset
+
+jobs:
+  migrate:
+    name: Run Database Migration
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run migration
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          if [ "${{ github.event.inputs.action }}" == "up" ]; then
+            echo "Applying migrations..."
+            psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f database/schema.sql
+          elif [ "${{ github.event.inputs.action }}" == "down" ]; then
+            echo "Rolling back migrations..."
+            psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+          elif [ "${{ github.event.inputs.action }}" == "reset" ]; then
+            echo "Resetting database..."
+            psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+            psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f database/schema.sql
+          fi
+
+      - name: Verify migration
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          echo "Checking tables..."
+          psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "\dt"
+
+      - name: Notify team
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            Database migration ${{ job.status }}
+            Environment: ${{ github.event.inputs.environment }}
+            Action: ${{ github.event.inputs.action }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}

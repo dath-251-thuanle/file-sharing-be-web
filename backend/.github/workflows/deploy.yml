@@ -1,0 +1,103 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment || 'production' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+      url: https://api.filesharing.com
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up environment variables
+        run: |
+          echo "DEPLOY_ENV=${{ github.event.inputs.environment || 'production' }}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            cd /opt/file-sharing-backend
+            
+            # Pull latest image
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            
+            # Stop old container
+            docker-compose down
+            
+            # Update docker-compose.yml with new image tag
+            sed -i "s|image:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}|" docker-compose.yml
+            
+            # Start new container
+            docker-compose up -d
+            
+            # Clean up old images
+            docker image prune -af --filter "until=24h"
+            
+            # Check health
+            sleep 10
+            curl -f http://localhost:8080/health || exit 1
+
+      - name: Notify deployment status
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            Deployment to ${{ env.DEPLOY_ENV }} ${{ job.status }}
+            Repository: ${{ github.repository }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  rollback:
+    name: Rollback
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: failure()
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+    
+    steps:
+      - name: Rollback deployment
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            cd /opt/file-sharing-backend
+            docker-compose down
+            docker-compose up -d --force-recreate

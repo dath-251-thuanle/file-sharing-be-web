@@ -1,0 +1,56 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+LICENSE
+
+# CI/CD
+.github
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testing
+coverage.out
+coverage.html
+*_test.go
+tests/
+
+# Build artifacts
+bin/
+dist/
+tmp/
+*.exe
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Dependencies (will be downloaded in container)
+vendor/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Air (hot reload)
+.air.toml
+tmp/
+
+# Storage (will be mounted as volume)
+storage/uploads/*
+
+# Misc
+*.bak
+*.tmp

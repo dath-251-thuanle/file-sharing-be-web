@@ -1,0 +1,43 @@
+name: Cleanup Expired Files
+
+on:
+  schedule:
+    # Run every day at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+jobs:
+  cleanup:
+    name: Cleanup Expired Files
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+    
+    steps:
+      - name: Trigger cleanup endpoint
+        run: |
+          curl -X POST \
+            -H "X-Cron-Secret: ${{ secrets.CLEANUP_SECRET }}" \
+            ${{ secrets.API_URL }}/api/admin/cleanup
+
+      - name: Verify cleanup
+        run: |
+          sleep 5
+          curl -f ${{ secrets.API_URL }}/health || exit 1
+
+      - name: Notify on failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: 'failure'
+          text: 'Scheduled cleanup failed'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}

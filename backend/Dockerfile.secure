@@ -1,0 +1,47 @@
+# Security-focused Dockerfile using distroless
+# Build stage
+FROM golang:1.23-bookworm AS builder
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY . .
+
+# Build with security flags
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -a \
+    -installsuffix cgo \
+    -ldflags="-w -s -X main.Version=$(git describe --tags --always --dirty) -extldflags '-static'" \
+    -o server ./cmd/server/main.go
+
+# Final stage - Distroless (minimal attack surface)
+FROM gcr.io/distroless/static-debian12:nonroot
+
+# Copy CA certificates
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Copy binary
+COPY --from=builder /app/server /app/server
+
+# Copy config files (optional)
+COPY --from=builder /app/configs /app/configs
+COPY --from=builder /app/pkg/database /app/database
+
+# Runs as nonroot user (UID 65532) by default
+# No shell, no package manager = smaller attack surface
+
+EXPOSE 8080
+
+# Distroless doesn't have shell, so use ENTRYPOINT
+ENTRYPOINT ["/app/server"]

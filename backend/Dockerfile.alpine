@@ -1,0 +1,60 @@
+# Alternative: Alpine with security patches
+FROM golang:1.23-alpine3.20 AS builder
+
+# Install security updates and build tools
+RUN apk update && \
+    apk upgrade --available && \
+    apk add --no-cache \
+        git \
+        gcc \
+        musl-dev \
+        ca-certificates \
+        tzdata \
+    && update-ca-certificates
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+COPY . .
+
+# Build static binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -a -installsuffix cgo \
+    -ldflags="-w -s -extldflags '-static'" \
+    -o server ./cmd/server/main.go
+
+# Final stage - Latest Alpine with patches
+FROM alpine:3.20
+
+# Install latest security patches
+RUN apk update && \
+    apk upgrade --available --no-cache && \
+    apk add --no-cache \
+        ca-certificates \
+        tzdata \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user
+RUN addgroup -g 1000 appuser && \
+    adduser -D -u 1000 -G appuser appuser
+
+WORKDIR /app
+
+COPY --from=builder /app/server .
+COPY --from=builder /app/configs ./configs
+COPY --from=builder /app/database ./database
+
+# Create storage with proper permissions
+RUN mkdir -p /app/storage/uploads && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+
+CMD ["./server"]

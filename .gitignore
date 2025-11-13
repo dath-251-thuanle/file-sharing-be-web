@@ -1,0 +1,125 @@
+# Root .gitignore for entire project
+
+# Backend specific
+backend/.env
+backend/.env.local
+backend/bin/
+backend/dist/
+backend/tmp/
+backend/storage/uploads/*
+!backend/storage/uploads/.gitkeep
+backend/coverage.out
+backend/coverage.html
+backend/*.log
+backend/logs/
+
+# Database specific (root level)
+database/*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+.AppleDouble
+.LSOverride
+ehthumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Node modules (if frontend added later)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+
+# Docker
+docker-compose.override.yml
+
+# Certificates
+*.pem
+*.key
+*.crt
+*.cert
+
+# Archives
+*.tar
+*.tar.gz
+*.zip
+*.rar
+
+# Mac
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# JetBrains IDEs
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Visual Studio
+.vs/
+
+# Profiling
+*.prof
+*.pprof
+cpu.prof
+mem.prof
+
+# Coverage
+coverage/
+*.coverprofile
+
+# Local overrides
+*.local.*
+*.deb
