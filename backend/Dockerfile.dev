@@ -1,5 +1,5 @@
 
-FROM golang:1.23-bookworm AS base
+FROM golang:1.25-bookworm AS base
 
 # Install development tools
 RUN apt-get update && \
@@ -9,7 +9,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Install air for hot reload
-RUN go install github.com/cosmtrek/air@latest
+RUN go install github.com/air-verse/air@latest
 
 # Set working directory
 WORKDIR /app
