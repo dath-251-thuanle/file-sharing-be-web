@@ -1,5 +1,5 @@
 
-FROM golang:1.23-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && \
@@ -21,8 +21,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-# RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o server ./cmd/server/main.go
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o server ./main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o server ./cmd/server/main.go
 
 # Final stage - Use Google's distroless image (more secure, minimal vulnerabilities)
 FROM gcr.io/distroless/static-debian12:nonroot AS final
