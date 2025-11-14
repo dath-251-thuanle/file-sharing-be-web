@@ -107,11 +107,24 @@ vendor:
 # Documentation
 swagger:
 	@echo "Generating Swagger documentation..."
-	@if command -v swag > /dev/null; then \
-		swag init -g $(MAIN_PATH) -o $(DOCS_PATH); \
+	@SWAG_CMD=$$(command -v swag 2>/dev/null || echo ""); \
+	if [ -z "$$SWAG_CMD" ]; then \
+		GOBIN=$$($(GOCMD) env GOBIN 2>/dev/null); \
+		GOPATH=$$($(GOCMD) env GOPATH 2>/dev/null); \
+		if [ -n "$$GOBIN" ] && [ -f "$$GOBIN/swag" ]; then \
+			SWAG_CMD="$$GOBIN/swag"; \
+		elif [ -n "$$GOPATH" ] && [ -f "$$GOPATH/bin/swag" ]; then \
+			SWAG_CMD="$$GOPATH/bin/swag"; \
+		elif [ -f "$$HOME/go/bin/swag" ]; then \
+			SWAG_CMD="$$HOME/go/bin/swag"; \
+		fi; \
+	fi; \
+	if [ -n "$$SWAG_CMD" ]; then \
+		$$SWAG_CMD init -g $(MAIN_PATH) -o $(DOCS_PATH); \
 		echo "Swagger docs generated in $(DOCS_PATH)"; \
 	else \
 		echo "swag not installed. Install: go install github.com/swaggo/swag/cmd/swag@latest"; \
+		echo "Note: Make sure $$HOME/go/bin (or your GOPATH/bin) is in your PATH"; \
 	fi
 
 # Database
@@ -259,7 +272,7 @@ watch:
 	@if command -v air > /dev/null; then \
 		air; \
 	else \
-		echo "air not installed. Install: go install github.com/cosmtrek/air@latest"; \
+		echo "air not installed. Install: go install github.com/air-verse/air@latest"; \
 		echo "Running with go run instead..."; \
 		$(GOCMD) run $(MAIN_PATH); \
 	fi
