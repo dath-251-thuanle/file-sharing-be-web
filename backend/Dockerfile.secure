@@ -1,6 +1,6 @@
 # Security-focused Dockerfile using distroless
 # Build stage
-FROM golang:1.23-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && \
