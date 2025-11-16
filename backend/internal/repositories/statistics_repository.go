@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yourusername/file-sharing-backend/internal/models"
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/models"
 	"gorm.io/gorm"
 )
 
