@@ -23,7 +23,6 @@
 | ------------- | --------------------- | --------------------------- |
 | `feat/`     | Tính năng mới      | `feature/upload-file`     |
 | `fix/`      | Sửa lỗi             | `bugfix/loi-dang-nhap`    |
-| `hotfix/`   | Sửa lỗi khẩn cấp  | `hotfix/loi-nghiem-trong` |
 | `refactor/` | Tái cấu trúc code  | `refactor/database-query` |
 | `docs/`     | Cập nhật tài liệu | `docs/huong-dan-setup`    |
 | `test/`     | Thêm tests           | `test/user-service`       |
@@ -70,7 +69,7 @@ Sử dụng chuẩn **Conventional Commits**.
 ### Ví Dụ Tốt
 
 ```
-feat(auth): thêm xác thực JWT token
+feat: thêm xác thực JWT token
 
 Triển khai hệ thống xác thực JWT với refresh token.
 - Thêm tạo và validate token
@@ -122,7 +121,7 @@ git checkout main
 git pull origin main
 
 # Bước 2: Tạo nhánh mới từ main
-git checkout -b feature/ten-tinh-nang
+git checkout -b feat/ten-tinh-nang
 
 # Bước 3: Làm việc và commit
 git add .
@@ -184,7 +183,7 @@ git push
 
 ```bash
 # KHÔNG LÀM NHƯ NÀY
-git checkout -b feature/xyz  # mà không pull main trước
+git checkout -b feat/xyz  # mà không pull main trước
 ```
 
 #### 3. Viết commit message không rõ
@@ -203,7 +202,7 @@ git commit -m "WIP"
 ```bash
 git checkout main
 git pull origin main
-git checkout -b feature/xyz
+git checkout -b feat/xyz
 ```
 
 #### 2. Viết commit message rõ ràng
@@ -255,7 +254,7 @@ git push -u origin feature/ten-tinh-nang
 **Nhớ:**
 
 - 🌿 Tên nhánh: `<type>/<mô-tả>`
-- 💬 Commit: `<type>(<scope>): <mô tả>`
+- 💬 Commit: `<type>: <mô tả>`
 - 🔄 Luôn pull main trước khi tạo nhánh mới
 - ✅ Test trước khi push
 
