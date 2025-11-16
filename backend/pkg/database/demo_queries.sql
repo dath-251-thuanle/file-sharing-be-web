@@ -300,10 +300,388 @@ ORDER BY date DESC;
 
 
 -- ============================================
--- 6. XÓA DỮ LIỆU
+-- 6. FILE STATISTICS - Thống kê file
 -- ============================================
 
--- Xóa file (tự động xóa shared_with do CASCADE)
+-- Khởi tạo statistics cho file (chỉ cho files có owner)
+INSERT INTO file_statistics (file_id, download_count, unique_downloaders, view_count)
+SELECT 
+    f.id,
+    0,
+    0,
+    0
+FROM files f
+WHERE f.owner_id IS NOT NULL
+ON CONFLICT (file_id) DO NOTHING;
+
+-- Xem statistics của tất cả files
+SELECT 
+    f.file_name,
+    u.username as owner,
+    COALESCE(fs.download_count, 0) as downloads,
+    COALESCE(fs.unique_downloaders, 0) as unique_users,
+    COALESCE(fs.view_count, 0) as views,
+    fs.last_downloaded_at,
+    fs.last_viewed_at
+FROM files f
+LEFT JOIN users u ON f.owner_id = u.id
+LEFT JOIN file_statistics fs ON f.id = fs.file_id
+ORDER BY fs.download_count DESC NULLS LAST;
+
+-- Top 10 files có nhiều downloads nhất
+SELECT 
+    f.file_name,
+    f.share_token,
+    u.username as owner,
+    fs.download_count,
+    fs.unique_downloaders,
+    fs.view_count,
+    fs.last_downloaded_at
+FROM file_statistics fs
+JOIN files f ON fs.file_id = f.id
+LEFT JOIN users u ON f.owner_id = u.id
+ORDER BY fs.download_count DESC
+LIMIT 10;
+
+-- Statistics của files của một user cụ thể
+SELECT 
+    f.file_name,
+    f.share_token,
+    f.created_at,
+    COALESCE(fs.download_count, 0) as downloads,
+    COALESCE(fs.view_count, 0) as views,
+    COALESCE(fs.unique_downloaders, 0) as unique_users,
+    fs.last_downloaded_at
+FROM files f
+LEFT JOIN file_statistics fs ON f.id = fs.file_id
+WHERE f.owner_id = (SELECT id FROM users WHERE username = 'nguyenvana')
+ORDER BY fs.download_count DESC NULLS LAST;
+
+-- Tổng hợp statistics theo user
+SELECT 
+    u.username,
+    u.email,
+    COUNT(DISTINCT f.id) as total_files,
+    COALESCE(SUM(fs.download_count), 0) as total_downloads,
+    COALESCE(SUM(fs.view_count), 0) as total_views,
+    COALESCE(SUM(fs.unique_downloaders), 0) as total_unique_downloaders
+FROM users u
+LEFT JOIN files f ON u.id = f.owner_id
+LEFT JOIN file_statistics fs ON f.id = fs.file_id
+GROUP BY u.id, u.username, u.email
+ORDER BY total_downloads DESC;
+
+
+-- ============================================
+-- 7. DOWNLOAD HISTORY - Simple download tracking (browser-style)
+-- ============================================
+
+-- Record download from authenticated user
+INSERT INTO download_history (
+    file_id, 
+    downloader_id, 
+    download_completed
+)
+VALUES (
+    (SELECT id FROM files WHERE share_token = 'abc123def456'),
+    (SELECT id FROM users WHERE username = 'tranthib'),
+    TRUE
+);
+
+-- Record download from anonymous user
+INSERT INTO download_history (
+    file_id,
+    downloader_id,
+    download_completed
+)
+VALUES (
+    (SELECT id FROM files WHERE share_token = 'abc123def456'),
+    NULL,  -- Anonymous download
+    TRUE
+);
+
+-- Record failed download (interrupted)
+INSERT INTO download_history (
+    file_id,
+    downloader_id,
+    download_completed
+)
+VALUES (
+    (SELECT id FROM files WHERE share_token = 'xyz789ghi012'),
+    (SELECT id FROM users WHERE username = 'secureuser'),
+    FALSE  -- Download was interrupted
+);
+
+-- Record multiple downloads for testing
+INSERT INTO download_history (file_id, downloader_id, download_completed)
+SELECT 
+    (SELECT id FROM files WHERE share_token = 'abc123def456'),
+    u.id,
+    TRUE
+FROM users u
+WHERE u.username IN ('nguyenvana', 'tranthib', 'secureuser');
+
+-- View all download history
+SELECT 
+    f.file_name,
+    f.share_token,
+    COALESCE(u.username, 'Anonymous') as downloader,
+    COALESCE(u.email, 'Anonymous') as downloader_email,
+    dh.downloaded_at,
+    dh.download_completed
+FROM download_history dh
+JOIN files f ON dh.file_id = f.id
+LEFT JOIN users u ON dh.downloader_id = u.id
+ORDER BY dh.downloaded_at DESC
+LIMIT 50;
+
+-- Download history for a specific file
+-- API equivalent: GET /files/:id/download-history
+SELECT 
+    dh.downloaded_at,
+    COALESCE(u.username, 'Anonymous') as downloader,
+    u.email as downloader_email,
+    dh.download_completed
+FROM download_history dh
+LEFT JOIN users u ON dh.downloader_id = u.id
+WHERE dh.file_id = (SELECT id FROM files WHERE share_token = 'abc123def456')
+ORDER BY dh.downloaded_at DESC;
+
+-- Download history for a user (what files they downloaded)
+SELECT 
+    f.file_name,
+    f.share_token,
+    owner.username as file_owner,
+    dh.downloaded_at,
+    dh.download_completed
+FROM download_history dh
+JOIN files f ON dh.file_id = f.id
+LEFT JOIN users owner ON f.owner_id = owner.id
+WHERE dh.downloader_id = (SELECT id FROM users WHERE username = 'tranthib')
+ORDER BY dh.downloaded_at DESC;
+
+-- Count downloads by day (last 7 days)
+SELECT 
+    DATE(dh.downloaded_at) as date,
+    COUNT(*) as total_downloads,
+    COUNT(DISTINCT dh.downloader_id) as unique_users,
+    COUNT(CASE WHEN dh.downloader_id IS NULL THEN 1 END) as anonymous_downloads,
+    COUNT(CASE WHEN dh.download_completed = FALSE THEN 1 END) as failed_downloads
+FROM download_history dh
+WHERE dh.downloaded_at >= NOW() - INTERVAL '7 days'
+GROUP BY DATE(dh.downloaded_at)
+ORDER BY date DESC;
+
+-- Top downloaders (users with most downloads)
+SELECT 
+    u.username,
+    u.email,
+    COUNT(*) as total_downloads,
+    COUNT(DISTINCT dh.file_id) as unique_files_downloaded,
+    COUNT(CASE WHEN dh.download_completed = FALSE THEN 1 END) as failed_downloads,
+    MAX(dh.downloaded_at) as last_download
+FROM download_history dh
+JOIN users u ON dh.downloader_id = u.id
+GROUP BY u.id, u.username, u.email
+ORDER BY total_downloads DESC
+LIMIT 10;
+
+-- Most downloaded files
+SELECT 
+    f.file_name,
+    f.share_token,
+    COUNT(*) as total_downloads,
+    COUNT(DISTINCT dh.downloader_id) FILTER (WHERE dh.downloader_id IS NOT NULL) as unique_users,
+    COUNT(*) FILTER (WHERE dh.downloader_id IS NULL) as anonymous_downloads,
+    COUNT(*) FILTER (WHERE dh.download_completed = FALSE) as failed_downloads
+FROM download_history dh
+JOIN files f ON dh.file_id = f.id
+GROUP BY f.id, f.file_name, f.share_token
+ORDER BY total_downloads DESC
+LIMIT 10;
+
+-- Download activity by hour of day
+SELECT 
+    EXTRACT(HOUR FROM dh.downloaded_at) as hour_of_day,
+    COUNT(*) as downloads,
+    COUNT(CASE WHEN dh.download_completed = FALSE THEN 1 END) as failed
+FROM download_history dh
+GROUP BY hour_of_day
+ORDER BY hour_of_day;
+
+
+-- ============================================
+-- 8. ANALYTICS - Phân tích nâng cao
+-- ============================================
+
+-- Dashboard overview cho owner
+SELECT 
+    (SELECT COUNT(*) FROM files WHERE owner_id = (SELECT id FROM users WHERE username = 'nguyenvana')) as total_files,
+    (SELECT COALESCE(SUM(download_count), 0) FROM file_statistics fs 
+     JOIN files f ON fs.file_id = f.id 
+     WHERE f.owner_id = (SELECT id FROM users WHERE username = 'nguyenvana')) as total_downloads,
+    (SELECT COALESCE(SUM(view_count), 0) FROM file_statistics fs 
+     JOIN files f ON fs.file_id = f.id 
+     WHERE f.owner_id = (SELECT id FROM users WHERE username = 'nguyenvana')) as total_views,
+    (SELECT COUNT(*) FROM download_history dh 
+     JOIN files f ON dh.file_id = f.id 
+     WHERE f.owner_id = (SELECT id FROM users WHERE username = 'nguyenvana')
+     AND dh.downloaded_at >= NOW() - INTERVAL '24 hours') as downloads_last_24h;
+
+-- File popularity score (downloads + views weighted)
+SELECT 
+    f.file_name,
+    f.share_token,
+    u.username as owner,
+    COALESCE(fs.download_count, 0) as downloads,
+    COALESCE(fs.view_count, 0) as views,
+    (COALESCE(fs.download_count, 0) * 2 + COALESCE(fs.view_count, 0)) as popularity_score
+FROM files f
+LEFT JOIN users u ON f.owner_id = u.id
+LEFT JOIN file_statistics fs ON f.id = fs.file_id
+WHERE f.owner_id IS NOT NULL
+ORDER BY popularity_score DESC
+LIMIT 20;
+
+-- Conversion rate (views to downloads)
+SELECT 
+    f.file_name,
+    fs.view_count,
+    fs.download_count,
+    CASE 
+        WHEN fs.view_count > 0 THEN ROUND(fs.download_count::NUMERIC / fs.view_count * 100, 2)
+        ELSE 0 
+    END as conversion_rate_percent
+FROM files f
+JOIN file_statistics fs ON f.id = fs.file_id
+WHERE fs.view_count > 0
+ORDER BY conversion_rate_percent DESC;
+
+-- Recently active files (downloaded or viewed in last 7 days)
+SELECT 
+    f.file_name,
+    f.share_token,
+    u.username as owner,
+    fs.download_count,
+    fs.view_count,
+    GREATEST(
+        COALESCE(fs.last_downloaded_at, '1970-01-01'::timestamp), 
+        COALESCE(fs.last_viewed_at, '1970-01-01'::timestamp)
+    ) as last_activity,
+    CASE 
+        WHEN COALESCE(fs.last_downloaded_at, '1970-01-01'::timestamp) > COALESCE(fs.last_viewed_at, '1970-01-01'::timestamp) THEN 'download'
+        WHEN COALESCE(fs.last_viewed_at, '1970-01-01'::timestamp) > COALESCE(fs.last_downloaded_at, '1970-01-01'::timestamp) THEN 'view'
+        ELSE 'unknown'
+    END as last_activity_type
+FROM files f
+LEFT JOIN users u ON f.owner_id = u.id
+JOIN file_statistics fs ON f.id = fs.file_id
+WHERE GREATEST(
+    COALESCE(fs.last_downloaded_at, '1970-01-01'::timestamp), 
+    COALESCE(fs.last_viewed_at, '1970-01-01'::timestamp)
+) >= NOW() - INTERVAL '7 days'
+ORDER BY last_activity DESC;
+
+-- Success rate analysis (completed vs failed downloads)
+SELECT 
+    f.file_name,
+    f.share_token,
+    COUNT(*) as total_attempts,
+    COUNT(*) FILTER (WHERE dh.download_completed = TRUE) as successful,
+    COUNT(*) FILTER (WHERE dh.download_completed = FALSE) as failed,
+    ROUND(
+        COUNT(*) FILTER (WHERE dh.download_completed = TRUE)::NUMERIC / 
+        NULLIF(COUNT(*), 0) * 100, 
+        2
+    ) as success_rate_percent
+FROM download_history dh
+JOIN files f ON dh.file_id = f.id
+GROUP BY f.id, f.file_name, f.share_token
+HAVING COUNT(*) > 0
+ORDER BY total_attempts DESC;
+
+
+-- ============================================
+-- 9. MAINTENANCE - Cleanup và maintenance
+-- ============================================
+
+-- Xóa download history cũ (older than 90 days)
+DELETE FROM download_history 
+WHERE downloaded_at < NOW() - INTERVAL '90 days';
+
+-- Xóa statistics của files đã bị xóa (orphaned records)
+DELETE FROM file_statistics
+WHERE file_id NOT IN (SELECT id FROM files);
+
+-- Recalculate unique_downloaders cho một file
+UPDATE file_statistics
+SET unique_downloaders = (
+    SELECT COUNT(DISTINCT downloader_id)
+    FROM download_history
+    WHERE file_id = file_statistics.file_id
+        AND downloader_id IS NOT NULL
+)
+WHERE file_id = (SELECT id FROM files WHERE share_token = 'abc123def456');
+
+-- Reset statistics (if needed)
+UPDATE file_statistics
+SET download_count = 0,
+    view_count = 0,
+    unique_downloaders = 0,
+    last_downloaded_at = NULL,
+    last_viewed_at = NULL,
+    updated_at = NOW()
+WHERE file_id = (SELECT id FROM files WHERE share_token = 'xyz789ghi012');
+
+
+-- ============================================
+-- 10. TESTING SCENARIOS
+-- ============================================
+
+-- Scenario 1: File với nhiều views nhưng ít downloads (people just browsing)
+-- Tạo views
+INSERT INTO file_statistics (file_id, view_count, last_viewed_at, updated_at)
+VALUES (
+    (SELECT id FROM files WHERE share_token = 'abc123def456'),
+    50,
+    NOW(),
+    NOW()
+)
+ON CONFLICT (file_id) 
+DO UPDATE SET 
+    view_count = file_statistics.view_count + 50,
+    last_viewed_at = NOW(),
+    updated_at = NOW();
+
+-- Scenario 2: Simulate viral file (many downloads from anonymous users)
+INSERT INTO download_history (file_id, downloader_id, download_completed)
+SELECT 
+    (SELECT id FROM files WHERE share_token = 'abc123def456'),
+    NULL,  -- Anonymous
+    TRUE
+FROM generate_series(1, 20);
+
+-- Scenario 3: Check statistics accuracy
+-- Compare download_history count with file_statistics.download_count
+SELECT 
+    f.file_name,
+    COALESCE(fs.download_count, 0) as stats_count,
+    (SELECT COUNT(*) FROM download_history WHERE file_id = f.id) as history_count,
+    CASE 
+        WHEN COALESCE(fs.download_count, 0) = (SELECT COUNT(*) FROM download_history WHERE file_id = f.id) 
+        THEN '✓ Match' 
+        ELSE '✗ Mismatch' 
+    END as status
+FROM files f
+LEFT JOIN file_statistics fs ON f.id = fs.file_id
+WHERE f.owner_id IS NOT NULL;
+
+
+-- ============================================
+-- 11. XÓA DỮ LIỆU
+-- ============================================
+
+-- Xóa file (tự động xóa shared_with, file_statistics, download_history do CASCADE)
 DELETE FROM files WHERE share_token = 'abc123def456';
 
 -- Xóa user (files của user sẽ có owner_id = NULL)

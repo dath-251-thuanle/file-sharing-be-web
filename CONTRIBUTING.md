@@ -22,8 +22,7 @@
 | Loại         | Mô Tả               | Ví Dụ                     |
 | ------------- | --------------------- | --------------------------- |
 | `feat/`     | Tính năng mới      | `feature/upload-file`     |
-| `fix/`      | Sửa lỗi             | `bugfix/loi-dang-nhap`    |
-| `hotfix/`   | Sửa lỗi khẩn cấp  | `hotfix/loi-nghiem-trong` |
+| `fix/`      | Sửa lỗi             | `fix/loi-dang-nhap`       |
 | `refactor/` | Tái cấu trúc code  | `refactor/database-query` |
 | `docs/`     | Cập nhật tài liệu | `docs/huong-dan-setup`    |
 | `test/`     | Thêm tests           | `test/user-service`       |
@@ -45,7 +44,7 @@ Sử dụng chuẩn **Conventional Commits**.
 ### Định Dạng
 
 ```
-<type>(<scope>): <mô tả ngắn>
+<type>: <mô tả ngắn>
 
 <nội dung chi tiết (tùy chọn)>
 
@@ -54,23 +53,23 @@ Sử dụng chuẩn **Conventional Commits**.
 
 ### Các Type
 
-| Type         | Mô Tả                 | Ví Dụ                                     |
-| ------------ | ----------------------- | ------------------------------------------- |
-| `feat`     | Tính năng mới        | `feat(auth): thêm đăng nhập JWT`      |
-| `fix`      | Sửa lỗi               | `fix(upload): sửa lỗi upload file lớn` |
-| `docs`     | Cập nhật tài liệu   | `docs(readme): cập nhật hướng dẫn`   |
-| `style`    | Format code             | `style: định dạng lại code`           |
-| `refactor` | Tái cấu trúc         | `refactor: tối ưu database query`       |
-| `perf`     | Cải thiện hiệu năng | `perf: tối ưu tốc độ tải file`      |
-| `test`     | Thêm/sửa tests        | `test: thêm test cho user service`       |
-| `chore`    | Bảo trì               | `chore: cập nhật dependencies`          |
-| `ci`       | CI/CD                   | `ci: thêm GitHub Actions`                |
-| `build`    | Build system            | `build: cập nhật Docker config`         |
+| Type         | Mô Tả                 | Ví Dụ                                   |
+| ------------ | ----------------------- | ----------------------------------------- |
+| `feat`     | Tính năng mới        | `feat: thêm đăng nhập JWT`          |
+| `fix`      | Sửa lỗi               | `fix: sửa lỗi upload file lớn`       |
+| `docs`     | Cập nhật tài liệu   | `docs(readme): cập nhật hướng dẫn` |
+| `style`    | Format code             | `style: định dạng lại code`         |
+| `refactor` | Tái cấu trúc         | `refactor: tối ưu database query`     |
+| `perf`     | Cải thiện hiệu năng | `perf: tối ưu tốc độ tải file`    |
+| `test`     | Thêm/sửa tests        | `test: thêm test cho user service`     |
+| `chore`    | Bảo trì               | `chore: cập nhật dependencies`        |
+| `ci`       | CI/CD                   | `ci: thêm GitHub Actions`              |
+| `build`    | Build system            | `build: cập nhật Docker config`       |
 
 ### Ví Dụ Tốt
 
 ```
-feat(auth): thêm xác thực JWT token
+feat: thêm xác thực JWT token
 
 Triển khai hệ thống xác thực JWT với refresh token.
 - Thêm tạo và validate token
@@ -122,14 +121,14 @@ git checkout main
 git pull origin main
 
 # Bước 2: Tạo nhánh mới từ main
-git checkout -b feature/ten-tinh-nang
+git checkout -b feat/ten-tinh-nang
 
 # Bước 3: Làm việc và commit
 git add .
 git commit -m "feat: thêm chức năng upload file"
 
 # Bước 4: Push nhánh lên GitHub
-git push -u origin feature/ten-tinh-nang
+git push -u origin feat/ten-tinh-nang
 
 # Bước 5: Tạo Pull Request trên GitHub
 ```
@@ -184,7 +183,7 @@ git push
 
 ```bash
 # KHÔNG LÀM NHƯ NÀY
-git checkout -b feature/xyz  # mà không pull main trước
+git checkout -b feat/xyz  # mà không pull main trước
 ```
 
 #### 3. Viết commit message không rõ
@@ -203,7 +202,7 @@ git commit -m "WIP"
 ```bash
 git checkout main
 git pull origin main
-git checkout -b feature/xyz
+git checkout -b feat/xyz
 ```
 
 #### 2. Viết commit message rõ ràng
@@ -255,10 +254,10 @@ git push -u origin feature/ten-tinh-nang
 **Nhớ:**
 
 - 🌿 Tên nhánh: `<type>/<mô-tả>`
-- 💬 Commit: `<type>(<scope>): <mô tả>`
+- 💬 Commit: `<type>: <mô tả>`
 - 🔄 Luôn pull main trước khi tạo nhánh mới
 - ✅ Test trước khi push
 
 ---
 
-Có câu hỏi? Tạo issue với label `question` hoặc hỏi maintainers! 🚀
+Có câu hỏi? Tạo issue với label `question` hoặc đi hỏi. Trong trường hợp bị conflict khi mở pull request, từ từ mà fix nhé =)))

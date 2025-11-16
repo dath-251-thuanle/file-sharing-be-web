@@ -123,6 +123,7 @@ docker build -f Dockerfile.dev -t file-sharing-backend:dev .
 ### Swagger UI
 
 Truy cập API documentation tại:
+
 - Development: http://localhost:8080/swagger/index.html
 - Production: https://api.filesharing.com/swagger/index.html
 
@@ -271,12 +272,14 @@ go test -v ./...
 Database schema được định nghĩa trong `database/schema.sql`:
 
 ### Tables:
+
 - `users` - User accounts với TOTP 2FA
 - `files` - File metadata với validity period
 - `shared_with` - Many-to-many relationship (files ↔ users)
 - `system_policy` - Global configuration (singleton)
 
 ### Key Features:
+
 - UUID primary keys
 - Citext cho email/username (case-insensitive)
 - Bcrypt password hashing
@@ -297,35 +300,36 @@ Xem `.github/workflows/` để biết chi tiết.
 ## 📝 Development Workflow
 
 1. **Tạo feature branch**
+
    ```bash
    git checkout -b feature/your-feature
    ```
-
 2. **Code & test**
+
    ```bash
    # Implement your feature
    # Write tests
    make test
    ```
-
 3. **Format & lint**
+
    ```bash
    make fmt
    make lint
    ```
-
 4. **Commit & push**
+
    ```bash
    git add .
    git commit -m "feat: your feature description"
    git push origin feature/your-feature
    ```
-
 5. **Create Pull Request**
 
 ## 🐛 Troubleshooting
 
 ### Database connection error
+
 ```bash
 # Kiểm tra PostgreSQL đang chạy
 pg_isready -h localhost -p 5432
@@ -334,6 +338,7 @@ pg_isready -h localhost -p 5432
 ```
 
 ### Port already in use
+
 ```bash
 # Tìm process đang dùng port 8080
 netstat -ano | findstr :8080  # Windows
@@ -343,9 +348,9 @@ lsof -i :8080                  # Linux/Mac
 ```
 
 ### Module not found
+
 ```bash
 # Download dependencies
 go mod download
 go mod tidy
 ```
-
