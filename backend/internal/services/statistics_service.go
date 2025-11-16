@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/yourusername/file-sharing-backend/internal/models"
-	"github.com/yourusername/file-sharing-backend/internal/repositories"
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/models"
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/repositories"
 )
 
 type StatisticsService interface {
