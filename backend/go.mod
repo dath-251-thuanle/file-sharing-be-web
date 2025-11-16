@@ -1,4 +1,4 @@
-module github.com/yourusername/file-sharing-backend
+module github.com/dath-251-thuanle/file-sharing-be-web
 
 go 1.23.0
 
