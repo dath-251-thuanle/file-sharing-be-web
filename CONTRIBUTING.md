@@ -22,7 +22,7 @@
 | Loại         | Mô Tả               | Ví Dụ                     |
 | ------------- | --------------------- | --------------------------- |
 | `feat/`     | Tính năng mới      | `feature/upload-file`     |
-| `fix/`      | Sửa lỗi             | `bugfix/loi-dang-nhap`    |
+| `fix/`      | Sửa lỗi             | `fix/loi-dang-nhap`       |
 | `refactor/` | Tái cấu trúc code  | `refactor/database-query` |
 | `docs/`     | Cập nhật tài liệu | `docs/huong-dan-setup`    |
 | `test/`     | Thêm tests           | `test/user-service`       |
@@ -44,7 +44,7 @@ Sử dụng chuẩn **Conventional Commits**.
 ### Định Dạng
 
 ```
-<type>(<scope>): <mô tả ngắn>
+<type>: <mô tả ngắn>
 
 <nội dung chi tiết (tùy chọn)>
 
@@ -53,18 +53,18 @@ Sử dụng chuẩn **Conventional Commits**.
 
 ### Các Type
 
-| Type         | Mô Tả                 | Ví Dụ                                     |
-| ------------ | ----------------------- | ------------------------------------------- |
-| `feat`     | Tính năng mới        | `feat(auth): thêm đăng nhập JWT`      |
-| `fix`      | Sửa lỗi               | `fix(upload): sửa lỗi upload file lớn` |
-| `docs`     | Cập nhật tài liệu   | `docs(readme): cập nhật hướng dẫn`   |
-| `style`    | Format code             | `style: định dạng lại code`           |
-| `refactor` | Tái cấu trúc         | `refactor: tối ưu database query`       |
-| `perf`     | Cải thiện hiệu năng | `perf: tối ưu tốc độ tải file`      |
-| `test`     | Thêm/sửa tests        | `test: thêm test cho user service`       |
-| `chore`    | Bảo trì               | `chore: cập nhật dependencies`          |
-| `ci`       | CI/CD                   | `ci: thêm GitHub Actions`                |
-| `build`    | Build system            | `build: cập nhật Docker config`         |
+| Type         | Mô Tả                 | Ví Dụ                                   |
+| ------------ | ----------------------- | ----------------------------------------- |
+| `feat`     | Tính năng mới        | `feat: thêm đăng nhập JWT`          |
+| `fix`      | Sửa lỗi               | `fix: sửa lỗi upload file lớn`       |
+| `docs`     | Cập nhật tài liệu   | `docs(readme): cập nhật hướng dẫn` |
+| `style`    | Format code             | `style: định dạng lại code`         |
+| `refactor` | Tái cấu trúc         | `refactor: tối ưu database query`     |
+| `perf`     | Cải thiện hiệu năng | `perf: tối ưu tốc độ tải file`    |
+| `test`     | Thêm/sửa tests        | `test: thêm test cho user service`     |
+| `chore`    | Bảo trì               | `chore: cập nhật dependencies`        |
+| `ci`       | CI/CD                   | `ci: thêm GitHub Actions`              |
+| `build`    | Build system            | `build: cập nhật Docker config`       |
 
 ### Ví Dụ Tốt
 
@@ -128,7 +128,7 @@ git add .
 git commit -m "feat: thêm chức năng upload file"
 
 # Bước 4: Push nhánh lên GitHub
-git push -u origin feature/ten-tinh-nang
+git push -u origin feat/ten-tinh-nang
 
 # Bước 5: Tạo Pull Request trên GitHub
 ```
@@ -260,4 +260,4 @@ git push -u origin feature/ten-tinh-nang
 
 ---
 
-Có câu hỏi? Tạo issue với label `question` hoặc hỏi maintainers! 🚀
+Có câu hỏi? Tạo issue với label `question` hoặc đi hỏi. Trong trường hợp bị conflict khi mở pull request, từ từ mà fix nhé =)))
