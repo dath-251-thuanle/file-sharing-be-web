@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/yourusername/file-sharing-backend/internal/config"
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/config"
 )
 
 func main() {
