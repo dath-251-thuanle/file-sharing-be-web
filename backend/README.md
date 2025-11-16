@@ -354,20 +354,3 @@ lsof -i :8080                  # Linux/Mac
 go mod download
 go mod tidy
 ```
-
-## 📄 License
-
-MIT License - xem file LICENSE để biết chi tiết.
-
-## 👥 Contributors
-
-- Backend Team - Initial- Email: support@filesharing.com
-- Issues: [GitHub Issues](repository-url/issues)
-
-## 🔗 Links
-
-- [API Documentation](docs/API_DOCUMENTATION.md)
-- [OpenAPI Spec](docs/openapi.yaml)
-- [Database Schema](database/schema.sql)
-- [SRS Document](../SRS.txt)
-- [API Specification](../APIspec.txt)
