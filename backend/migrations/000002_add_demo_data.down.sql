@@ -1,16 +1,46 @@
--- Remove demo data in reverse order
+-- Remove demo data in reverse order (respecting foreign keys)
+
+-- Remove download history
+DELETE FROM download_history WHERE file_id IN (
+    '650e8400-e29b-41d4-a716-446655440001',
+    '650e8400-e29b-41d4-a716-446655440002',
+    '650e8400-e29b-41d4-a716-446655440003',
+    '650e8400-e29b-41d4-a716-446655440004',
+    '650e8400-e29b-41d4-a716-446655440005',
+    '650e8400-e29b-41d4-a716-446655440006'
+);
+
+-- Remove file statistics
+DELETE FROM file_statistics WHERE file_id IN (
+    '650e8400-e29b-41d4-a716-446655440001',
+    '650e8400-e29b-41d4-a716-446655440002',
+    '650e8400-e29b-41d4-a716-446655440003',
+    '650e8400-e29b-41d4-a716-446655440004',
+    '650e8400-e29b-41d4-a716-446655440005',
+    '650e8400-e29b-41d4-a716-446655440006'
+);
+
+-- Remove shared_with relationships
 DELETE FROM shared_with WHERE file_id IN (
     '650e8400-e29b-41d4-a716-446655440001',
     '650e8400-e29b-41d4-a716-446655440002',
-    '650e8400-e29b-41d4-a716-446655440003'
+    '650e8400-e29b-41d4-a716-446655440003',
+    '650e8400-e29b-41d4-a716-446655440004',
+    '650e8400-e29b-41d4-a716-446655440005',
+    '650e8400-e29b-41d4-a716-446655440006'
 );
 
+-- Remove files
 DELETE FROM files WHERE id IN (
     '650e8400-e29b-41d4-a716-446655440001',
     '650e8400-e29b-41d4-a716-446655440002',
-    '650e8400-e29b-41d4-a716-446655440003'
+    '650e8400-e29b-41d4-a716-446655440003',
+    '650e8400-e29b-41d4-a716-446655440004',
+    '650e8400-e29b-41d4-a716-446655440005',
+    '650e8400-e29b-41d4-a716-446655440006'
 );
 
+-- Remove users
 DELETE FROM users WHERE id IN (
     '550e8400-e29b-41d4-a716-446655440001',
     '550e8400-e29b-41d4-a716-446655440002',
