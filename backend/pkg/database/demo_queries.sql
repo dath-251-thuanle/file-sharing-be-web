@@ -304,10 +304,9 @@ ORDER BY date DESC;
 -- ============================================
 
 -- Khởi tạo statistics cho file (chỉ cho files có owner)
-INSERT INTO file_statistics (file_id, download_count, unique_downloaders, view_count)
+INSERT INTO file_statistics (file_id, download_count, unique_downloaders)
 SELECT 
     f.id,
-    0,
     0,
     0
 FROM files f
@@ -320,9 +319,7 @@ SELECT
     u.username as owner,
     COALESCE(fs.download_count, 0) as downloads,
     COALESCE(fs.unique_downloaders, 0) as unique_users,
-    COALESCE(fs.view_count, 0) as views,
-    fs.last_downloaded_at,
-    fs.last_viewed_at
+    fs.last_downloaded_at
 FROM files f
 LEFT JOIN users u ON f.owner_id = u.id
 LEFT JOIN file_statistics fs ON f.id = fs.file_id
@@ -335,7 +332,6 @@ SELECT
     u.username as owner,
     fs.download_count,
     fs.unique_downloaders,
-    fs.view_count,
     fs.last_downloaded_at
 FROM file_statistics fs
 JOIN files f ON fs.file_id = f.id
@@ -349,7 +345,6 @@ SELECT
     f.share_token,
     f.created_at,
     COALESCE(fs.download_count, 0) as downloads,
-    COALESCE(fs.view_count, 0) as views,
     COALESCE(fs.unique_downloaders, 0) as unique_users,
     fs.last_downloaded_at
 FROM files f
@@ -363,7 +358,6 @@ SELECT
     u.email,
     COUNT(DISTINCT f.id) as total_files,
     COALESCE(SUM(fs.download_count), 0) as total_downloads,
-    COALESCE(SUM(fs.view_count), 0) as total_views,
     COALESCE(SUM(fs.unique_downloaders), 0) as total_unique_downloaders
 FROM users u
 LEFT JOIN files f ON u.id = f.owner_id
@@ -520,22 +514,19 @@ SELECT
     (SELECT COALESCE(SUM(download_count), 0) FROM file_statistics fs 
      JOIN files f ON fs.file_id = f.id 
      WHERE f.owner_id = (SELECT id FROM users WHERE username = 'nguyenvana')) as total_downloads,
-    (SELECT COALESCE(SUM(view_count), 0) FROM file_statistics fs 
-     JOIN files f ON fs.file_id = f.id 
-     WHERE f.owner_id = (SELECT id FROM users WHERE username = 'nguyenvana')) as total_views,
     (SELECT COUNT(*) FROM download_history dh 
      JOIN files f ON dh.file_id = f.id 
      WHERE f.owner_id = (SELECT id FROM users WHERE username = 'nguyenvana')
      AND dh.downloaded_at >= NOW() - INTERVAL '24 hours') as downloads_last_24h;
 
--- File popularity score (downloads + views weighted)
+-- File popularity score (downloads weighted by unique downloaders)
 SELECT 
     f.file_name,
     f.share_token,
     u.username as owner,
     COALESCE(fs.download_count, 0) as downloads,
-    COALESCE(fs.view_count, 0) as views,
-    (COALESCE(fs.download_count, 0) * 2 + COALESCE(fs.view_count, 0)) as popularity_score
+    COALESCE(fs.unique_downloaders, 0) as unique_users,
+    (COALESCE(fs.download_count, 0) * 2 + COALESCE(fs.unique_downloaders, 0)) as popularity_score
 FROM files f
 LEFT JOIN users u ON f.owner_id = u.id
 LEFT JOIN file_statistics fs ON f.id = fs.file_id
@@ -543,44 +534,33 @@ WHERE f.owner_id IS NOT NULL
 ORDER BY popularity_score DESC
 LIMIT 20;
 
--- Conversion rate (views to downloads)
+-- Download engagement rate (unique downloaders vs total downloads)
 SELECT 
     f.file_name,
-    fs.view_count,
     fs.download_count,
+    fs.unique_downloaders,
     CASE 
-        WHEN fs.view_count > 0 THEN ROUND(fs.download_count::NUMERIC / fs.view_count * 100, 2)
+        WHEN fs.download_count > 0 THEN ROUND(fs.unique_downloaders::NUMERIC / fs.download_count * 100, 2)
         ELSE 0 
-    END as conversion_rate_percent
+    END as unique_download_rate_percent
 FROM files f
 JOIN file_statistics fs ON f.id = fs.file_id
-WHERE fs.view_count > 0
-ORDER BY conversion_rate_percent DESC;
+WHERE fs.download_count > 0
+ORDER BY unique_download_rate_percent DESC;
 
--- Recently active files (downloaded or viewed in last 7 days)
+-- Recently active files (downloaded in last 7 days)
 SELECT 
     f.file_name,
     f.share_token,
     u.username as owner,
     fs.download_count,
-    fs.view_count,
-    GREATEST(
-        COALESCE(fs.last_downloaded_at, '1970-01-01'::timestamp), 
-        COALESCE(fs.last_viewed_at, '1970-01-01'::timestamp)
-    ) as last_activity,
-    CASE 
-        WHEN COALESCE(fs.last_downloaded_at, '1970-01-01'::timestamp) > COALESCE(fs.last_viewed_at, '1970-01-01'::timestamp) THEN 'download'
-        WHEN COALESCE(fs.last_viewed_at, '1970-01-01'::timestamp) > COALESCE(fs.last_downloaded_at, '1970-01-01'::timestamp) THEN 'view'
-        ELSE 'unknown'
-    END as last_activity_type
+    fs.unique_downloaders,
+    fs.last_downloaded_at as last_activity
 FROM files f
 LEFT JOIN users u ON f.owner_id = u.id
 JOIN file_statistics fs ON f.id = fs.file_id
-WHERE GREATEST(
-    COALESCE(fs.last_downloaded_at, '1970-01-01'::timestamp), 
-    COALESCE(fs.last_viewed_at, '1970-01-01'::timestamp)
-) >= NOW() - INTERVAL '7 days'
-ORDER BY last_activity DESC;
+WHERE fs.last_downloaded_at >= NOW() - INTERVAL '7 days'
+ORDER BY fs.last_downloaded_at DESC;
 
 -- Success rate analysis (completed vs failed downloads)
 SELECT 
@@ -626,10 +606,8 @@ WHERE file_id = (SELECT id FROM files WHERE share_token = 'abc123def456');
 -- Reset statistics (if needed)
 UPDATE file_statistics
 SET download_count = 0,
-    view_count = 0,
     unique_downloaders = 0,
     last_downloaded_at = NULL,
-    last_viewed_at = NULL,
     updated_at = NOW()
 WHERE file_id = (SELECT id FROM files WHERE share_token = 'xyz789ghi012');
 
@@ -638,20 +616,14 @@ WHERE file_id = (SELECT id FROM files WHERE share_token = 'xyz789ghi012');
 -- 10. TESTING SCENARIOS
 -- ============================================
 
--- Scenario 1: File với nhiều views nhưng ít downloads (people just browsing)
--- Tạo views
-INSERT INTO file_statistics (file_id, view_count, last_viewed_at, updated_at)
-VALUES (
-    (SELECT id FROM files WHERE share_token = 'abc123def456'),
-    50,
-    NOW(),
-    NOW()
-)
-ON CONFLICT (file_id) 
-DO UPDATE SET 
-    view_count = file_statistics.view_count + 50,
-    last_viewed_at = NOW(),
-    updated_at = NOW();
+-- Scenario 1: File with downloads from multiple users
+-- Increment download count
+UPDATE file_statistics
+SET download_count = download_count + 10,
+    unique_downloaders = unique_downloaders + 5,
+    last_downloaded_at = NOW(),
+    updated_at = NOW()
+WHERE file_id = (SELECT id FROM files WHERE share_token = 'abc123def456');
 
 -- Scenario 2: Simulate viral file (many downloads from anonymous users)
 INSERT INTO download_history (file_id, downloader_id, download_completed)
