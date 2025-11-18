@@ -105,8 +105,6 @@ CREATE TABLE file_statistics (
     download_count INTEGER DEFAULT 0,              -- Total number of downloads
     unique_downloaders INTEGER DEFAULT 0,          -- Number of unique users who downloaded
     last_downloaded_at TIMESTAMP WITH TIME ZONE,   -- Most recent download timestamp
-    view_count INTEGER DEFAULT 0,                  -- Total page views (file info page)
-    last_viewed_at TIMESTAMP WITH TIME ZONE,       -- Most recent view timestamp
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
