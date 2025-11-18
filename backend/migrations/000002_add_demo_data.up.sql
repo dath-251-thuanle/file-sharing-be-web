@@ -34,13 +34,13 @@ INSERT INTO shared_with (file_id, user_id) VALUES
 -- Insert file statistics
 -- Aggregated stats showing which files are most popular
 -- API testing: GET /files/:id/statistics
-INSERT INTO file_statistics (id, file_id, download_count, unique_downloaders, last_downloaded_at, view_count, last_viewed_at) VALUES
-    ('750e8400-e29b-41d4-a716-446655440001', '650e8400-e29b-41d4-a716-446655440001', 15, 8, NOW() - INTERVAL '2 hours', 42, NOW() - INTERVAL '30 minutes'),
-    ('750e8400-e29b-41d4-a716-446655440002', '650e8400-e29b-41d4-a716-446655440002', 23, 12, NOW() - INTERVAL '5 hours', 67, NOW() - INTERVAL '1 hour'),
-    ('750e8400-e29b-41d4-a716-446655440003', '650e8400-e29b-41d4-a716-446655440003', 5, 2, NOW() - INTERVAL '1 day', 18, NOW() - INTERVAL '3 hours'),
-    ('750e8400-e29b-41d4-a716-446655440004', '650e8400-e29b-41d4-a716-446655440004', 87, 34, NOW() - INTERVAL '1 hour', 203, NOW() - INTERVAL '15 minutes'),     -- Most popular
-    ('750e8400-e29b-41d4-a716-446655440005', '650e8400-e29b-41d4-a716-446655440005', 12, 5, NOW() - INTERVAL '8 hours', 35, NOW() - INTERVAL '2 hours'),
-    ('750e8400-e29b-41d4-a716-446655440006', '650e8400-e29b-41d4-a716-446655440006', 156, 67, NOW() - INTERVAL '3 hours', 412, NOW() - INTERVAL '45 minutes');  -- Viral file!
+INSERT INTO file_statistics (id, file_id, download_count, unique_downloaders, last_downloaded_at) VALUES
+    ('750e8400-e29b-41d4-a716-446655440001', '650e8400-e29b-41d4-a716-446655440001', 15, 8, NOW() - INTERVAL '2 hours'),
+    ('750e8400-e29b-41d4-a716-446655440002', '650e8400-e29b-41d4-a716-446655440002', 23, 12, NOW() - INTERVAL '5 hours'),
+    ('750e8400-e29b-41d4-a716-446655440003', '650e8400-e29b-41d4-a716-446655440003', 5, 2, NOW() - INTERVAL '1 day'),
+    ('750e8400-e29b-41d4-a716-446655440004', '650e8400-e29b-41d4-a716-446655440004', 87, 34, NOW() - INTERVAL '1 hour'),     -- Most popular
+    ('750e8400-e29b-41d4-a716-446655440005', '650e8400-e29b-41d4-a716-446655440005', 12, 5, NOW() - INTERVAL '8 hours'),
+    ('750e8400-e29b-41d4-a716-446655440006', '650e8400-e29b-41d4-a716-446655440006', 156, 67, NOW() - INTERVAL '3 hours');  -- Viral file!
 
 -- Insert download history
 -- Detailed log of each download (mix of authenticated and anonymous downloads)
