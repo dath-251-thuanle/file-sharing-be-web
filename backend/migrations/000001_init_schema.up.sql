@@ -119,9 +119,7 @@ CREATE TABLE file_statistics (
     file_id UUID NOT NULL UNIQUE REFERENCES files(id) ON DELETE CASCADE,
     download_count INTEGER DEFAULT 0,              -- Total number of downloads
     unique_downloaders INTEGER DEFAULT 0,          -- Number of unique users who downloaded
-    last_downloaded_at TIMESTAMP WITH TIME ZONE,   -- Most recent download timestamp
-    view_count INTEGER DEFAULT 0,                  -- Total page views (file info page)
-    last_viewed_at TIMESTAMP WITH TIME ZONE,       -- Most recent view timestamp
+    last_downloaded_at TIMESTAMP WITH TIME ZONE,   -- Most recent download timestamp           -- Total page views (file info page)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -131,9 +129,9 @@ CREATE INDEX idx_file_statistics_download_count ON file_statistics(download_coun
 CREATE INDEX idx_file_statistics_last_downloaded ON file_statistics(last_downloaded_at DESC);  -- Sort by recent activity
 
 -- Create download_history table
--- Simple download history (similar to browser download history)
+-- Simple download history
 -- Records each download attempt for audit and analytics
--- API endpoint: GET /files/:id/download-history (owner only)
+-- API endpoint: GET /files/:id/download-history
 CREATE TABLE download_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
