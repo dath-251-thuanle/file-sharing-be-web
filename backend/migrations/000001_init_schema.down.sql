@@ -1,6 +1,7 @@
 -- Drop tables in reverse order (respecting foreign keys)
 DROP TABLE IF EXISTS download_history;
 DROP TABLE IF EXISTS file_statistics;
+DROP TABLE IF EXISTS password_reset_tokens;
 DROP TABLE IF EXISTS shared_with;
 DROP TABLE IF EXISTS files;
 DROP TABLE IF EXISTS users;
