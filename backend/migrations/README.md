@@ -1,282 +1,199 @@
 # Database Migrations
 
-This directory contains database migration files for the File Sharing API using [golang-migrate](https://github.com/golang-migrate/migrate).
+Migrations cho File Sharing API sử dụng [golang-migrate](https://github.com/golang-migrate/migrate).
 
 ## Migration Files
 
-| Version | Description | Files |
-|---------|-------------|-------|
-| 000001 | Initial schema (users, files, shared_with, system_policy) | `000001_init_schema.up.sql`, `000001_init_schema.down.sql` |
-| 000002 | Demo data (3 users, 3 files, 1 share relationship) | `000002_add_demo_data.up.sql`, `000002_add_demo_data.down.sql` |
+| Version | Description                                      | Files                                                              |
+| ------- | ------------------------------------------------ | ------------------------------------------------------------------ |
+| 000001  | Initial schema (users, files, shared_with, etc.) | `000001_init_schema.up.sql`, `000001_init_schema.down.sql`     |
+| 000002  | Demo data (3 users, 6 files)                     | `000002_add_demo_data.up.sql`, `000002_add_demo_data.down.sql` |
 
-## Installation
+**Current schema version:** 2
 
-Install golang-migrate CLI:
+---
+
+## Cài đặt golang-migrate
 
 ### Windows
+
 ```powershell
-# Using Chocolatey
-choco install golang-migrate
-
-# Using Scoop
-scoop install migrate
-
-# Using Go
+# Dùng Go (Recommended)
 go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# Hoặc dùng Chocolatey
+choco install golang-migrate
 ```
 
-### Linux
+### Linux/WSL
+
 ```bash
+# Dùng Go (Recommended)
+go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# Hoặc download binary
 curl -L https://github.com/golang-migrate/migrate/releases/latest/download/migrate.linux-amd64.tar.gz | tar xvz
 sudo mv migrate /usr/local/bin/
-
-# Or using Go
-go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 ```
 
-### macOS
-```bash
-brew install golang-migrate
+---
 
-# Or using Go
-go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-```
+## Cách sử dụng
 
-## Usage
+### Windows (PowerShell)
 
-### Using Helper Scripts
-
-#### Windows (PowerShell)
 ```powershell
-# Apply all pending migrations
-.\scripts\migrate.ps1 up
+cd backend
 
-# Rollback last migration
-.\scripts\migrate.ps1 down
+# Full setup (tạo DB + chạy migrations + option chạy demo queries)
+.\scripts\setup-db.ps1 setup
 
-# Rollback last 2 migrations
-.\scripts\migrate.ps1 down 2
+# Chỉ chạy migrations
+.\scripts\setup-db.ps1 migrate
 
-# Check current version
-.\scripts\migrate.ps1 version
-
-# Create new migration
-.\scripts\migrate.ps1 create add_user_avatar
-
-# Force set version (use with caution!)
-.\scripts\migrate.ps1 force 1
-
-# Drop all tables (requires confirmation)
-.\scripts\migrate.ps1 drop
+# Các lệnh khác
+.\scripts\setup-db.ps1 up              # Apply migrations
+.\scripts\setup-db.ps1 down            # Rollback 1 migration
+.\scripts\setup-db.ps1 down 2          # Rollback 2 migrations
+.\scripts\setup-db.ps1 version         # Check version hiện tại
+.\scripts\setup-db.ps1 create <name>   # Tạo migration mới
 ```
 
-#### Linux/Mac (Bash)
+> **Note:** Khi chạy `setup`, script sẽ hỏi có muốn chạy demo queries không để test database ngay lập tức.
+
+### Linux/WSL (Bash)
+
 ```bash
-# Apply all pending migrations
-./scripts/migrate.sh up
+cd backend
 
-# Rollback last migration
-./scripts/migrate.sh down
+# Full setup (tạo DB + chạy migrations + option chạy demo queries)
+./scripts/setup-db.sh setup
 
-# Rollback last 2 migrations
-./scripts/migrate.sh down 2
+# Chỉ chạy migrations
+./scripts/setup-db.sh migrate
 
-# Check current version
-./scripts/migrate.sh version
-
-# Create new migration
-./scripts/migrate.sh create add_user_avatar
-
-# Force set version (use with caution!)
-./scripts/migrate.sh force 1
-
-# Drop all tables (requires confirmation)
-./scripts/migrate.sh drop
+# Các lệnh khác
+./scripts/setup-db.sh up              # Apply migrations
+./scripts/setup-db.sh down            # Rollback 1 migration
+./scripts/setup-db.sh down 2          # Rollback 2 migrations
+./scripts/setup-db.sh version         # Check version hiện tại
+./scripts/setup-db.sh create <name>   # Tạo migration mới
 ```
 
-### Using Makefile
-```bash
-# Apply migrations
-make migrate-up
+> **Note:** Khi chạy `setup`, script sẽ hỏi có muốn chạy demo queries không để test database ngay lập tức.
 
-# Rollback last migration
-make migrate-down
-
-# Check version
-make migrate-version
-
-# Create new migration
-make migrate-create name=add_user_avatar
-
-# Force version
-make migrate-force version=1
-
-# Drop all tables
-make migrate-drop
-```
-
-### Direct CLI Usage
-```bash
-# Set database URL
-export DATABASE_URL="postgres://user:password@localhost:5432/dbname?sslmode=disable"
-
-# Apply all migrations
-migrate -path ./migrations -database "$DATABASE_URL" up
-
-# Rollback last migration
-migrate -path ./migrations -database "$DATABASE_URL" down 1
-
-# Check version
-migrate -path ./migrations -database "$DATABASE_URL" version
-
-# Create new migration
-migrate create -ext sql -dir ./migrations -seq add_user_avatar
-
-# Force version (dangerous!)
-migrate -path ./migrations -database "$DATABASE_URL" force 1
-```
+---
 
 ## Environment Variables
 
-Configure database connection in `.env`:
+File `.env` cần có các biến sau:
 
 ```env
+# Database (Required)
 DB_HOST=localhost
 DB_PORT=5432
 DB_USER=postgres
-DB_PASSWORD=postgres
-DB_NAME=filesharing
+DB_PASSWORD=your_password_here
+DB_NAME=file_sharing_db
 DB_SSLMODE=disable
+DB_TIMEZONE=Asia/Ho_Chi_Minh
+DB_MAX_OPEN_CONNS=25
+DB_MAX_IDLE_CONNS=5
+DB_CONN_MAX_LIFETIME=5m
+
+# Migrations (Optional)
 MIGRATIONS_PATH=./migrations
 ```
 
-## Migration Best Practices
+Script `setup-db.sh`/`setup-db.ps1` sẽ tự động copy từ `.env.example` nếu chưa có `.env`.
 
-### 1. Always Create Both Up and Down
-- Every migration must have both `.up.sql` and `.down.sql`
-- Down migration should cleanly reverse the up migration
+---
 
-### 2. Use Transactions
-```sql
-BEGIN;
--- Your migration code here
-COMMIT;
-```
+## Verify Migrations
 
-### 3. Make Migrations Idempotent
-```sql
--- Good: checks if exists
-CREATE TABLE IF NOT EXISTS users (...);
-
--- Good: safe alter
-ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar VARCHAR(255);
-
--- Bad: will fail on second run
-CREATE TABLE users (...);
-```
-
-### 4. Handle Data Carefully
-```sql
--- When dropping columns, consider data migration
-ALTER TABLE users ADD COLUMN new_field VARCHAR(255);
-UPDATE users SET new_field = old_field;
-ALTER TABLE users DROP COLUMN old_field;
-```
-
-### 5. Test Migrations
 ```bash
-# Test up
-./scripts/migrate.ps1 up
+# Check version
+./scripts/setup-db.sh version
 
-# Verify database state
-psql -h localhost -U postgres -d filesharing -c "\dt"
+# Xem tables đã tạo
+psql -h localhost -U postgres -d file_sharing_db -c "\dt"
 
-# Test down
-./scripts/migrate.ps1 down
-
-# Verify rollback
-psql -h localhost -U postgres -d filesharing -c "\dt"
+# Đếm data
+psql -h localhost -U postgres -d file_sharing_db -c "SELECT COUNT(*) FROM users;"
+psql -h localhost -U postgres -d file_sharing_db -c "SELECT COUNT(*) FROM files;"
 ```
 
-### 6. Version Control
-- Never modify existing migration files after they've been applied
-- Always create new migrations for changes
-- Use semantic naming: `add_`, `remove_`, `modify_`, `create_`, `drop_`
+---
 
 ## Troubleshooting
 
-### Migration is marked dirty
-If a migration fails partway through:
+### Migration bị "dirty"
 
 ```bash
-# Check current state
-./scripts/migrate.ps1 version
+# Check state
+./scripts/setup-db.sh version
 
-# Force to previous good version
-./scripts/migrate.ps1 force <version>
+# Force về version trước đó
+./scripts/setup-db.sh force 1
 
-# Fix the migration file
-# Then retry
-./scripts/migrate.ps1 up
+# Chạy lại
+./scripts/setup-db.sh up
 ```
 
-### Connection refused
-```bash
-# Check if PostgreSQL is running
-docker ps
+### Lỗi kết nối database
 
-# Check environment variables
+```bash
+# Check PostgreSQL đang chạy
+systemctl status postgresql    # Linux
+docker ps                       # Docker
+
+# Check .env
 cat .env
 
 # Test connection
-psql -h localhost -U postgres -d filesharing
+psql -h localhost -U postgres -d file_sharing_db
 ```
 
-### No change (migration already applied)
-This is normal - migrate tracks which versions have been applied in the `schema_migrations` table.
-
-```sql
--- Check migration history
-SELECT * FROM schema_migrations;
-```
-
-## CI/CD Integration
-
-Migrations are automatically applied in GitHub Actions:
-
-### Manual Migration Workflow
-```bash
-# Trigger via GitHub UI or CLI
-gh workflow run migrate.yml
-```
-
-### Automatic on Deploy
-Migrations run before deployment in the deploy workflow:
-```yaml
-- name: Run migrations
-  run: |
-    migrate -path ./migrations -database "$DATABASE_URL" up
-```
+---
 
 ## Demo Data
 
-Migration `000002` includes demo data:
-- 3 users (admin, john_doe, jane_smith) - password: `password123`
-- 3 files with different visibility settings
-- 1 sharing relationship
+### Migration Demo Data
 
-**Production:** Skip demo data migration or create a separate production migration set.
+Migration `000002` tạo demo data:
 
-## Schema Versioning
+- **3 users:** admin, john_doe, jane_smith (password: `password123`)
+- **6 files** với các loại khác nhau
+- File statistics và download history
 
-Current schema version: **2**
+**Production:** Chỉ chạy migration `000001` (schema only):
 
-Version history:
-- v1: Initial schema (2024-01-xx)
-- v2: Demo data (2024-01-xx)
+```bash
+migrate -path ./migrations -database "$DATABASE_URL" goto 1
+```
 
-## Further Reading
+### Demo Queries
 
-- [golang-migrate documentation](https://github.com/golang-migrate/migrate)
-- [PostgreSQL Migration Best Practices](https://www.postgresql.org/docs/current/ddl-alter.html)
-- [Database Migration Strategies](https://martinfowler.com/articles/evodb.html)
+File `pkg/database/demo_queries.sql` chứa các truy vấn mẫu để test database.
+
+**Cách 1:** Chạy tự động khi setup (recommended)
+```bash
+# Script sẽ hỏi có muốn chạy demo queries không
+./scripts/setup-db.sh setup
+```
+
+**Cách 2:** Chạy thủ công
+```bash
+# Linux/WSL
+psql -h localhost -U postgres -d file_sharing_db -f pkg/database/demo_queries.sql
+
+# Windows
+psql -h localhost -U postgres -d file_sharing_db -f pkg\database\demo_queries.sql
+```
+
+**Các truy vấn có sẵn:**
+- List users và files
+- Test sharing permissions
+- File statistics
+- Download history
+- System policy
