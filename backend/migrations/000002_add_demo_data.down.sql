@@ -1,48 +1,30 @@
--- Remove demo data in reverse order (respecting foreign keys)
+-- Remove all demo data
+-- Execute in reverse order of creation to avoid foreign key constraints
 
--- Remove download history
-DELETE FROM download_history WHERE file_id IN (
-    '650e8400-e29b-41d4-a716-446655440001',
-    '650e8400-e29b-41d4-a716-446655440002',
-    '650e8400-e29b-41d4-a716-446655440003',
-    '650e8400-e29b-41d4-a716-446655440004',
-    '650e8400-e29b-41d4-a716-446655440005',
-    '650e8400-e29b-41d4-a716-446655440006'
+-- Delete password reset tokens
+DELETE FROM password_reset_tokens WHERE token LIKE 'demo_%';
+
+-- Delete download history
+DELETE FROM download_history 
+WHERE file_id IN (
+    SELECT id FROM files WHERE share_token LIKE 'demo_%'
 );
 
--- Remove file statistics
-DELETE FROM file_statistics WHERE file_id IN (
-    '650e8400-e29b-41d4-a716-446655440001',
-    '650e8400-e29b-41d4-a716-446655440002',
-    '650e8400-e29b-41d4-a716-446655440003',
-    '650e8400-e29b-41d4-a716-446655440004',
-    '650e8400-e29b-41d4-a716-446655440005',
-    '650e8400-e29b-41d4-a716-446655440006'
+-- Delete file statistics
+DELETE FROM file_statistics 
+WHERE file_id IN (
+    SELECT id FROM files WHERE share_token LIKE 'demo_%'
 );
 
--- Remove shared_with relationships
-DELETE FROM shared_with WHERE file_id IN (
-    '650e8400-e29b-41d4-a716-446655440001',
-    '650e8400-e29b-41d4-a716-446655440002',
-    '650e8400-e29b-41d4-a716-446655440003',
-    '650e8400-e29b-41d4-a716-446655440004',
-    '650e8400-e29b-41d4-a716-446655440005',
-    '650e8400-e29b-41d4-a716-446655440006'
+-- Delete shared_with relationships
+DELETE FROM shared_with 
+WHERE file_id IN (
+    SELECT id FROM files WHERE share_token LIKE 'demo_%'
 );
 
--- Remove files
-DELETE FROM files WHERE id IN (
-    '650e8400-e29b-41d4-a716-446655440001',
-    '650e8400-e29b-41d4-a716-446655440002',
-    '650e8400-e29b-41d4-a716-446655440003',
-    '650e8400-e29b-41d4-a716-446655440004',
-    '650e8400-e29b-41d4-a716-446655440005',
-    '650e8400-e29b-41d4-a716-446655440006'
-);
+-- Delete demo files
+DELETE FROM files WHERE share_token LIKE 'demo_%';
 
--- Remove users
-DELETE FROM users WHERE id IN (
-    '550e8400-e29b-41d4-a716-446655440001',
-    '550e8400-e29b-41d4-a716-446655440002',
-    '550e8400-e29b-41d4-a716-446655440003'
-);
+-- Delete demo users
+DELETE FROM users WHERE username IN ('admin', 'nguyenvana', 'tranthib');
+
