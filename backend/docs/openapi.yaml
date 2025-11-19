@@ -261,6 +261,54 @@ paths:
                   user: { $ref: "#/components/schemas/UserResponse" }
         "403": { description: "Incorrect TOTP code." }
 
+  # --- BỔ SUNG: TOTP SETUP ---
+  /auth/totp/setup:
+    post:
+      tags: [Auth]
+      summary: Khởi tạo/Tạo lại TOTP Secret và QR Code.
+      operationId: setupTotp
+      security: [{ JWTAuth: [] }] # Auth Required
+      responses:
+        "200":
+          description: TOTP secret generated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "TOTP secret generated" }
+                  totpSetup: { $ref: "#/components/schemas/TOTPSetupResponse" }
+        "401": { description: "Unauthorized." }
+
+  # --- BỔ SUNG: TOTP VERIFY (ENABLE 2FA) ---
+  /auth/totp/verify:
+    post:
+      tags: [Auth]
+      summary: Xác minh mã TOTP để kích hoạt 2FA.
+      operationId: enableTotp
+      security: [{ JWTAuth: [] }] # Auth Required
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, description: "Mã TOTP 6 chữ số." }
+      responses:
+        "200":
+          description: TOTP verified and enabled successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    { type: string, example: "TOTP verified successfully" }
+                  totpEnabled: { type: boolean, example: true }
+        "403": { description: "Incorrect TOTP code." }
+
   /auth/logout:
     post:
       tags: [Auth]
@@ -279,7 +327,7 @@ paths:
       description: |
         Hỗ trợ upload ẩn danh (Auth Optional).
         File được lưu trữ với tên mã hóa ngẫu nhiên (NFR7).
-        Validation: Max file size là 50MB (mặc định).
+        Validation: Max file size là 50MB (mặc định trong SystemPolicy).
       security: [{ JWTAuth: [] }]
       requestBody:
         required: true
@@ -396,7 +444,7 @@ paths:
           in: query
           description: "Password nếu file được bảo vệ."
           schema: { type: string }
-        - name: totp_code # Bổ sung dựa trên FR3.1
+        - name: totp_code
           in: query
           description: "Mã TOTP nếu file yêu cầu xác thực 2FA."
           schema: { type: string }
