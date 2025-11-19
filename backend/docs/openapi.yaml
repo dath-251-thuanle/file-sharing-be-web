@@ -828,8 +828,6 @@ paths:
         - Thông tin user: id, username, email, role, totpEnabled
         - Danh sách file: active, expired, pending, deleted
         - Pagination và summary statistics
-        
-        **Lưu ý:** User schema trả về nhất quán với `/auth/login` và `/auth/login/totp`
       security:
         - BearerAuth: []
       parameters:
