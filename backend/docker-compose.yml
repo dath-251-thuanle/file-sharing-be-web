@@ -1,4 +1,4 @@
-version: '3.8'
+# version: '3.8'  # Deprecated in Docker Compose v2
 
 services:
   # PostgreSQL Database
@@ -104,6 +104,20 @@ services:
       retries: 3
     profiles:
       - cache
+
+  # Database Migrations
+  migrate:
+    image: migrate/migrate:latest
+    container_name: file-sharing-migrate
+    volumes:
+      - ./migrations:/migrations
+    networks:
+      - app-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
 
   # Adminer (Database management UI)
   adminer:

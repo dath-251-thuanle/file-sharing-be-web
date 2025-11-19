@@ -2,6 +2,11 @@
 
 Backend API cho hệ thống chia sẻ file tạm thời, được xây dựng bằng **Golang** với **Gin Framework** và **PostgreSQL**.
 
+## ⚡ Quick Start
+
+Toàn bộ hướng dẫn setup/chạy (Docker, Windows, manual) đã gộp tại [`SETUP.md`](./SETUP.md).  
+Làm theo file đó để khởi chạy hệ thống.
+
 ## 🚀 Tính năng
 
 - ✅ Upload file (có hoặc không cần đăng nhập)
@@ -22,110 +27,9 @@ Backend API cho hệ thống chia sẻ file tạm thời, được xây dựng b
 
 ## 🛠️ Cài đặt
 
-### 1. Clone repository
-
-```bash
-git clone <repository-url>
-cd backend
-## 🚀 Quick Start
-
-### Chạy với Docker (Recommended) 🐳
-
-```bash
-# 1. Copy environment file
-cp .env.example .env
-
-# 2. Start all services (Development mode với hot reload)
-docker-compose --profile dev up -d
-
-# 3. Xem logs
-docker-compose logs -f app-dev
-
-# 4. Truy cập
-# API: http://localhost:8080
-# Swagger: http://localhost:8080/swagger/index.html
-```
-
-**📖 Xem chi tiết:** [QUICKSTART.md](QUICKSTART.md) - Hướng dẫn đầy đủ cách chạy local và trên GitHub Actions
-
-### Chạy không dùng Docker
-
-```bash
-# 1. Cài đặt PostgreSQL và tạo database
-createdb file_sharing_db
-
-# 2. Apply schema
-psql -U postgres -d file_sharing_db -f database/schema.sql
-
-# 3. Copy và config .env
-cp .env.example .env
-
-# 4. Install dependencies
-go mod download
-
-# 5. Run server
-make run
-# hoặc: go run cmd/server/main.go
-```
-
-Server sẽ chạy tại: `http://localhost:8080`
-
-## 🐳 Docker
-
-### Docker Compose Profiles
-
-```bash
-# Development (hot reload)
-docker-compose --profile dev up -d
-
-# Production
-docker-compose --profile prod up -d
-
-# Development + Redis cache
-docker-compose --profile dev --profile cache up -d
-
-# Development + Adminer (DB UI)
-docker-compose --profile dev --profile tools up -d
-# Adminer: http://localhost:8081
-
-# Production + Nginx reverse proxy
-docker-compose --profile prod --profile prod up -d
-```
-
-### Quản lý Docker
-
-```bash
-# Xem logs
-docker-compose logs -f [service-name]
-
-# Restart service
-docker-compose restart app-dev
-
-# Stop và xóa volumes
-docker-compose down -v
-
-# Rebuild sau khi sửa code
-docker-compose up -d --build app-dev
-```
-
-### Build images riêng
-
-```bash
-# Production build
-docker build -t file-sharing-backend:latest .
-
-# Development build
-docker build -f Dockerfile.dev -t file-sharing-backend:dev .
-```
+Các bước cài đặt/khởi chạy (Docker + manual) → xem [`SETUP.md`](./SETUP.md).
 
 ## 📚 API Documentation
-
-### Swagger UI
-
-Truy cập API documentation tại:
-
-- Development: http://localhost:8080/swagger/index.html
-- Production: https://api.filesharing.com/swagger/index.html
 
 ### API Specs
 
