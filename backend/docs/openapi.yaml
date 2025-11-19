@@ -1,949 +1,486 @@
-openapi: 3.1.0
+openapi: 3.0.4
 info:
-  title: File Sharing System API
+  title: File Sharing and Management System API
   description: |
-    Hệ thống chia sẻ file tạm thời với các tính năng:
-    - Upload file và tạo link chia sẻ
-    - Thiết lập quyền truy cập (public/password-protected/private)
-    - Thời gian hiệu lực linh hoạt (from/to)
-    - Bảo vệ bằng mật khẩu hoặc TOTP
-    - Chia sẻ với danh sách người dùng cụ thể
-    - Tự động xóa file hết hạn
-  version: 1.0.0
-  contact:
-    name: API Support
-    email: support@filesharing.com
-  license:
-    name: MIT
-    url: https://opensource.org/licenses/MIT
-
+    Đặc tả API Backend (Golang) cho hệ thống chia sẻ và quản lý file.
+    Hệ thống cho phép người dùng tải lên, quản lý và chia sẻ file thông qua liên kết duy nhất, có thể bảo vệ bằng mật khẩu hoặc TOTP.
+    Mục tiêu cung cấp một nền tảng lưu trữ file nhanh, tiện lợi và có bảo mật.
+  version: 1.1.0
 servers:
   - url: http://localhost:8080/api
-    description: Development server
-  - url: https://api.filesharing.com/api
-    description: Production server
-
+    description: Môi trường Phát triển (Local)
 tags:
-  - name: Authentication
-    description: User authentication and authorization
+  - name: Auth
+    description: Đăng ký, Đăng nhập và Quản lý xác thực 2FA (TOTP).
   - name: Files
-    description: File management operations
+    description: Upload, Download, Quản lý Metadata và Xóa file.
   - name: Admin
-    description: Admin-only operations
+    description: Cấu hình hệ thống và tác vụ dọn dẹp.
 
-security:
-  - BearerAuth: []
+components:
+  securitySchemes:
+    JWTAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Sử dụng JWT Bearer Token, hết hạn sau 24 giờ.
+    CronSecret:
+      type: apiKey
+      in: header
+      name: X-Cron-Secret
+      description: "Secret Key cho các tác vụ Cron job (ví dụ: Cleanup)."
+
+  schemas:
+    # --- AUTH SCHEMAS ---
+    UserRegister:
+      type: object
+      required: [username, email, password]
+      properties:
+        username: { type: string, example: "nam123" }
+        email: { type: string, format: email, example: "nam@example.com" }
+        password: { type: string, minLength: 6, example: "123456" }
+        enableTOTP:
+          {
+            type: boolean,
+            default: false,
+            description: "Bật 2FA ngay khi đăng ký.",
+          }
+        role: { type: string, enum: [user, admin], default: "user" }
+
+    UserLogin:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, example: "john@example.com" }
+        password: { type: string, example: "123456" }
+
+    TOTPSetupResponse:
+      type: object
+      properties:
+        secret: { type: string, description: "Secret Key để quét QR." }
+        qrCode: { type: string, description: "Base64 encoded PNG QR Code." }
+
+    # --- FILE SCHEMAS ---
+    FileMetadata:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        fileName: { type: string, example: "document.pdf" }
+        fileSize: { type: integer, example: 2048576 }
+        shareToken:
+          {
+            type: string,
+            description: "Token duy nhất, được mã hóa ngẫu nhiên (NFR7).",
+          }
+        shareLink: { type: string, format: url }
+        isPublic: { type: boolean, default: true }
+        hasPassword:
+          {
+            type: boolean,
+            description: "TRUE nếu file được bảo vệ bằng mật khẩu.",
+          }
+        availableFrom:
+          { type: string, format: date-time, example: "2025-11-10T00:00:00Z" }
+        availableTo:
+          { type: string, format: date-time, example: "2025-11-17T00:00:00Z" }
+        status:
+          {
+            type: string,
+            enum: [pending, active, expired],
+            description: "Trạng thái hiệu lực của file.",
+          }
+        createdAt: { type: string, format: date-time }
+        owner:
+          {
+            $ref: "#/components/schemas/UserResponse",
+            description: "Thông tin chủ sở hữu (NULL nếu Anonymous Upload).",
+          }
+        sharedWith: { type: array, items: { type: string, format: email } }
+        enableTOTP:
+          {
+            type: boolean,
+            description: "TRUE nếu file yêu cầu TOTP khi download.",
+          }
+
+    # --- ADMIN SCHEMAS ---
+    SystemPolicy:
+      type: object
+      properties:
+        maxFileSizeMB:
+          {
+            type: integer,
+            example: 50,
+            description: "Kích thước tối đa cho phép upload (MB).",
+          }
+        minValidityHours:
+          {
+            type: integer,
+            example: 1,
+            description: "Thời gian hiệu lực tối thiểu (giờ).",
+          }
+        maxValidityDays:
+          {
+            type: integer,
+            example: 30,
+            description: "Thời gian hiệu lực tối đa (ngày).",
+          }
+        defaultValidityDays:
+          {
+            type: integer,
+            example: 7,
+            description: "Thời gian hiệu lực mặc định (ngày).",
+          }
+        requirePasswordMinLength:
+          {
+            type: integer,
+            example: 6,
+            description: "Độ dài tối thiểu của mật khẩu file.",
+          }
+
+    # --- COMMON SCHEMAS ---
+    UserResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        email: { type: string, format: email }
+        role: { type: string }
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string, example: "UNAUTHORIZED" }
+        message:
+          { type: string, example: "Invalid or missing authentication token" }
+        details:
+          {
+            type: object,
+            description: "Thông tin chi tiết lỗi validation (nếu có).",
+          }
+
+    Pagination:
+      type: object
+      properties:
+        currentPage: { type: integer, example: 1 }
+        totalPages: { type: integer, example: 3 }
+        totalFiles: { type: integer, example: 42 }
+        limit: { type: integer, example: 20 }
+
+    FileSummary:
+      type: object
+      properties:
+        activeFiles: { type: integer, example: 28 }
+        pendingFiles: { type: integer, example: 5 }
+        expiredFiles: { type: integer, example: 9 }
 
 paths:
+  # --- AUTH ENDPOINTS ---
   /auth/register:
     post:
-      tags:
-        - Authentication
-      summary: Đăng ký tài khoản mới
-      description: Tạo tài khoản người dùng mới (không bắt buộc để upload file)
-      security: []
+      tags: [Auth]
+      summary: Đăng ký người dùng mới.
+      operationId: registerUser
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterRequest'
-            examples:
-              withTOTP:
-                summary: Đăng ký với TOTP
-                value:
-                  username: nam123
-                  email: nam@example.com
-                  password: "123456"
-                  enableTOTP: true
-                  role: user
-              withoutTOTP:
-                summary: Đăng ký không TOTP
-                value:
-                  username: john_doe
-                  email: john@example.com
-                  password: secure_password
-                  enableTOTP: false
-                  role: user
+            { schema: { $ref: "#/components/schemas/UserRegister" } }
       responses:
-        '200':
-          description: Đăng ký thành công
+        "201":
+          description: User registered successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RegisterResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '409':
-          description: Email hoặc username đã tồn tại
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                type: object
+                properties:
+                  message:
+                    { type: string, example: "User registered successfully" }
+                  userId: { type: string, format: uuid }
+                  totpSetup:
+                    {
+                      $ref: "#/components/schemas/TOTPSetupResponse",
+                      nullable: true,
+                    }
+        "400":
+          { description: "Validation error (Email exists or weak password)." }
 
   /auth/login:
     post:
-      tags:
-        - Authentication
-      summary: Đăng nhập
-      description: Đăng nhập để lấy JWT token
-      security: []
+      tags: [Auth]
+      summary: Đăng nhập để nhận JWT Token.
+      operationId: loginUser
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
+            { schema: { $ref: "#/components/schemas/UserLogin" } }
       responses:
-        '200':
-          description: Đăng nhập thành công hoặc yêu cầu TOTP
+        "200":
+          description: Đăng nhập thành công HOẶC yêu cầu TOTP.
           content:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/LoginResponse'
-                  - $ref: '#/components/schemas/TOTPRequiredResponse'
-              examples:
-                success:
-                  summary: Đăng nhập thành công
-                  value:
-                    accessToken: eyJhbGciOi...
-                    user:
-                      id: 550e8400-e29b-41d4-a716-446655440000
-                      username: nam123
-                      email: nam@example.com
-                totpRequired:
-                  summary: Yêu cầu TOTP
-                  value:
-                    requireTOTP: true
-                    message: TOTP verification required
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+                  - type: object # Successful login without TOTP
+                    properties:
+                      accessToken:
+                        { type: string, description: "JWT Access Token." }
+                      user: { $ref: "#/components/schemas/UserResponse" }
+                  - type: object # TOTP Required
+                    properties:
+                      requireTOTP: { type: boolean, example: true }
+                      message:
+                        { type: string, example: "TOTP verification required" }
+        "401": { description: "Invalid credentials." }
 
   /auth/login/totp:
     post:
-      tags:
-        - Authentication
-      summary: Xác thực TOTP
-      description: Xác thực mã TOTP 6 chữ số
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TOTPVerifyRequest'
-      responses:
-        '200':
-          description: Xác thực thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /auth/totp/setup:
-    post:
-      tags:
-        - Authentication
-      summary: Thiết lập TOTP
-      description: Bật hoặc reset TOTP cho user
-      responses:
-        '200':
-          description: TOTP secret được tạo
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TOTPSetupResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /auth/totp/verify:
-    post:
-      tags:
-        - Authentication
-      summary: Xác minh mã TOTP
-      description: Xác minh mã TOTP để kích hoạt 2FA
+      tags: [Auth]
+      summary: Xác thực mã TOTP sau khi login.
+      operationId: verifyLoginTotp
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required: [email, code]
               properties:
-                code:
-                  type: string
-                  example: "123456"
-              required:
-                - code
+                email: { type: string }
+                code: { type: string, description: "Mã TOTP 6 chữ số." }
       responses:
-        '200':
-          description: TOTP được xác minh thành công
+        "200":
+          description: TOTP verified, return Access Token.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  message:
-                    type: string
-                  totpEnabled:
-                    type: boolean
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+                  accessToken: { type: string }
+                  user: { $ref: "#/components/schemas/UserResponse" }
+        "403": { description: "Incorrect TOTP code." }
 
   /auth/logout:
     post:
-      tags:
-        - Authentication
-      summary: Đăng xuất
-      description: Đăng xuất (client tự xóa token)
+      tags: [Auth]
+      summary: Đăng xuất (Client tự hủy token).
+      operationId: logoutUser
+      security: [{ JWTAuth: [] }]
       responses:
-        '200':
-          description: Đăng xuất thành công
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: User logged out
+        "200": { description: "User logged out (client deletes token)." }
 
+  # --- FILE ENDPOINTS ---
   /files/upload:
     post:
-      tags:
-        - Files
-      summary: Upload file
+      tags: [Files]
+      summary: Tải file lên và tạo link chia sẻ.
+      operationId: uploadFile
       description: |
-        Upload file mới và tạo share link.
-        Authorization header là optional - nếu không có thì anonymous upload.
-      security:
-        - BearerAuth: []
-        - {}
+        Hỗ trợ upload ẩn danh (Auth Optional).
+        File được lưu trữ với tên mã hóa ngẫu nhiên (NFR7).
+        Validation: Max file size là 50MB (mặc định).
+      security: [{ JWTAuth: [] }]
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/FileUploadRequest'
+              type: object
+              properties:
+                file:
+                  {
+                    type: string,
+                    format: binary,
+                    description: "File nhị phân cần upload (required).",
+                  }
+                isPublic: { type: boolean, default: true }
+                password: { type: string, minLength: 6 }
+                availableFrom: { type: string, format: date-time }
+                availableTo: { type: string, format: date-time }
+                sharedWith:
+                  { type: array, items: { type: string, format: email } }
+                enableTOTP: { type: boolean }
       responses:
-        '201':
-          description: Upload thành công
+        "201":
+          description: File uploaded successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FileUploadResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '413':
-          description: File quá lớn
+                type: object
+                properties:
+                  message:
+                    { type: string, example: "File uploaded successfully" }
+                  file: { $ref: "#/components/schemas/FileMetadata" }
+        "413": { description: "Payload Too Large (File size exceeds limit)." }
+
+  /files/my:
+    get:
+      tags: [Files]
+      summary: Lấy danh sách file của người dùng đã đăng nhập (có phân trang).
+      operationId: getUserFiles
+      security: [{ JWTAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            {
+              type: string,
+              enum: [active, expired, pending, all],
+              default: all,
+            }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: sortBy
+          in: query
+          schema:
+            { type: string, enum: [createdAt, fileName], default: createdAt }
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc], default: desc }
+      responses:
+        "200":
+          description: Danh sách file của người dùng.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                type: object
+                properties:
+                  files:
+                    {
+                      type: array,
+                      items: { $ref: "#/components/schemas/FileMetadata" },
+                    }
+                  pagination: { $ref: "#/components/schemas/Pagination" }
+                  summary: { $ref: "#/components/schemas/FileSummary" }
+        "401": { description: "Unauthorized." }
 
   /files/{shareToken}:
     get:
-      tags:
-        - Files
-      summary: Lấy thông tin file
-      description: Lấy metadata của file qua share token
-      security: []
+      tags: [Files]
+      summary: Lấy Metadata file bằng shareToken.
+      operationId: getFileMetadata
       parameters:
-        - $ref: '#/components/parameters/ShareToken'
+        - name: shareToken
+          in: path
+          required: true
+          schema: { type: string }
       responses:
-        '200':
-          description: Thông tin file
+        "200":
+          description: Metadata file.
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/FileInfoResponse'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '410':
-          description: File đã hết hạn
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+              { schema: { $ref: "#/components/schemas/FileMetadata" } }
+        "404": { description: "File not found." }
+        "410": { description: "File expired (Gone)." }
 
   /files/{shareToken}/download:
     get:
-      tags:
-        - Files
-      summary: Tải file về
+      tags: [Files]
+      summary: Download nội dung file (binary data).
+      operationId: downloadFile
       description: |
-        Download file. Có thể cần:
-        - Password (qua query parameter)
-        - Authorization token (nếu file có sharedWith list)
-      security:
-        - BearerAuth: []
-        - {}
+        Endpoint tải file. Yêu cầu kiểm tra Thời hạn, Password, TOTP, và SharedWith list.
+        Nếu file là Private (SharedWith list), cần JWT Auth để kiểm tra quyền.
+      security: [{ JWTAuth: [] }]
       parameters:
-        - $ref: '#/components/parameters/ShareToken'
+        - name: shareToken
+          in: path
+          required: true
+          schema: { type: string }
         - name: password
           in: query
-          description: Mật khẩu bảo vệ (nếu file có password)
-          schema:
-            type: string
+          description: "Password nếu file được bảo vệ."
+          schema: { type: string }
+        - name: totp_code # Bổ sung dựa trên FR3.1
+          in: query
+          description: "Mã TOTP nếu file yêu cầu xác thực 2FA."
+          schema: { type: string }
       responses:
-        '200':
-          description: File binary
+        "200":
+          description: Binary file download.
           content:
             application/octet-stream:
-              schema:
-                type: string
-                format: binary
-          headers:
-            Content-Disposition:
-              schema:
-                type: string
-                example: attachment; filename="document.pdf"
-            Content-Length:
-              schema:
-                type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: Sai password hoặc không có quyền
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                wrongPassword:
-                  summary: Sai password
-                  value:
-                    error: Incorrect password
-                noPermission:
-                  summary: Không có quyền
-                  value:
-                    error: Access denied. You don't have permission to download this file.
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '410':
-          description: File đã hết hạn
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                  expiredAt:
-                    type: string
-                    format: date-time
-        '423':
-          description: File chưa đến thời gian hiệu lực
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                  availableFrom:
-                    type: string
-                    format: date-time
-                  hoursUntilAvailable:
-                    type: number
+              schema: { type: string, format: binary }
+        "401":
+          {
+            description: "Authentication required (cần JWT Auth cho file private).",
+          }
+        "403":
+          {
+            description: "Incorrect password HOẶC Access denied (Không trong SharedWith list).",
+          }
+        "410": { description: "File expired." }
+        "423": { description: "File not available yet (Locked)." }
 
   /files/{id}:
     delete:
-      tags:
-        - Files
-      summary: Xóa file
+      tags: [Files]
+      summary: Xóa file (chỉ chủ sở hữu).
+      operationId: deleteFile
       description: |
-        Xóa file (chỉ owner).
-        Anonymous upload KHÔNG THỂ xóa file sau khi upload.
+        Chỉ Owner (user_id khớp với owner_id) được xóa.
+        Anonymous upload (owner_id = NULL) KHÔNG THỂ xóa file sau khi upload.
+      security: [{ JWTAuth: [] }]
       parameters:
         - name: id
           in: path
           required: true
-          description: File UUID
           schema:
-            type: string
-            format: uuid
+            { type: string, format: uuid, description: "ID nội bộ của file." }
       responses:
-        '200':
-          description: Xóa thành công
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                  fileId:
-                    type: string
-                    format: uuid
-        '403':
-          description: Không phải owner hoặc anonymous upload
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        "200": { description: "File deleted successfully." }
+        "403": { description: "Not file owner (Forbidden)." }
+        "404": { description: "File not found." }
 
-  /files/my:
-    get:
-      tags:
-        - Files
-      summary: Lấy danh sách file của user
-      description: Lấy danh sách file đã upload (yêu cầu đăng nhập)
-      parameters:
-        - name: status
-          in: query
-          description: Lọc theo trạng thái file
-          schema:
-            type: string
-            enum: [active, expired, pending, all]
-            default: all
-        - name: page
-          in: query
-          description: Số trang
-          schema:
-            type: integer
-            default: 1
-            minimum: 1
-        - name: limit
-          in: query
-          description: Số file mỗi trang
-          schema:
-            type: integer
-            default: 20
-            minimum: 1
-            maximum: 100
-        - name: sortBy
-          in: query
-          description: Sắp xếp theo
-          schema:
-            type: string
-            enum: [createdAt, fileName]
-            default: createdAt
-        - name: order
-          in: query
-          description: Thứ tự sắp xếp
-          schema:
-            type: string
-            enum: [asc, desc]
-            default: desc
-      responses:
-        '200':
-          description: Danh sách file
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MyFilesResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /admin/cleanup:
-    post:
-      tags:
-        - Admin
-      summary: Xóa file hết hạn
-      description: |
-        Xóa file hết hạn (Cron job hoặc Admin endpoint).
-        Yêu cầu X-Cron-Secret header hoặc admin token.
-      security:
-        - BearerAuth: []
-        - CronSecret: []
-      responses:
-        '200':
-          description: Cleanup hoàn tất
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                  deletedFiles:
-                    type: integer
-                  timestamp:
-                    type: string
-                    format: date-time
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
+  # --- ADMIN ENDPOINTS ---
   /admin/policy:
     get:
-      tags:
-        - Admin
-      summary: Lấy cấu hình hệ thống
-      description: Lấy system policy (chỉ admin)
+      tags: [Admin]
+      summary: Lấy cấu hình hệ thống hiện tại.
+      operationId: getSystemPolicy
+      security: [{ JWTAuth: [] }] # Admin Required
       responses:
-        '200':
-          description: System policy
+        "200":
+          description: Cấu hình hệ thống.
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/SystemPolicy'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
+              { schema: { $ref: "#/components/schemas/SystemPolicy" } }
+        "403": { description: "Forbidden (Not Admin)." }
     patch:
-      tags:
-        - Admin
-      summary: Cập nhật cấu hình hệ thống
-      description: Cập nhật system policy (chỉ admin)
+      tags: [Admin]
+      summary: Cập nhật cấu hình hệ thống.
+      operationId: updateSystemPolicy
+      security: [{ JWTAuth: [] }] # Admin Required
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/SystemPolicyUpdate'
+            { schema: { $ref: "#/components/schemas/SystemPolicy" } }
       responses:
-        '200':
-          description: Cập nhật thành công
+        "200": { description: "Policy updated successfully." }
+        "403": { description: "Forbidden (Not Admin)." }
+        "400": { description: "Validation error (Invalid policy values)." }
+
+  /admin/cleanup:
+    post:
+      tags: [Admin]
+      summary: Kích hoạt tác vụ xóa file hết hạn.
+      operationId: runCleanupJob
+      description: Tác vụ xóa file có availableTo < NOW.
+      security: [{ JWTAuth: [] }, { CronSecret: [] }] # Admin OR Cron Secret
+      responses:
+        "200":
+          description: Cleanup completed.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  message:
-                    type: string
-                  policy:
-                    $ref: '#/components/schemas/SystemPolicy'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-components:
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: JWT token từ /auth/login
-
-    CronSecret:
-      type: apiKey
-      in: header
-      name: X-Cron-Secret
-      description: Secret key cho cron job
-
-  parameters:
-    ShareToken:
-      name: shareToken
-      in: path
-      required: true
-      description: Share token của file
-      schema:
-        type: string
-        example: a1b2c3d4e5f6g7h8
-
-  schemas:
-    RegisterRequest:
-      type: object
-      required:
-        - username
-        - email
-        - password
-        - role
-      properties:
-        username:
-          type: string
-          description: Tên người dùng (unique)
-          example: nam123
-        email:
-          type: string
-          format: email
-          description: Email (unique)
-          example: nam@example.com
-        password:
-          type: string
-          format: password
-          minLength: 6
-          description: Mật khẩu (tối thiểu 6 ký tự)
-          example: "123456"
-        enableTOTP:
-          type: boolean
-          description: Bật xác thực 2FA
-          default: false
-        role:
-          type: string
-          enum: [user, admin]
-          description: Phân quyền người dùng
-          example: user
-
-    RegisterResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: User registered successfully
-        userId:
-          type: string
-          format: uuid
-          example: 550e8400-e29b-41d4-a716-446655440000
-        totpSetup:
-          type: object
-          properties:
-            secret:
-              type: string
-              example: JBSWY3DPEHPK3PXP
-            qrCode:
-              type: string
-              description: Base64 encoded QR code
-              example: data:image/png;base64,iVBORw0KGgo...
-
-    LoginRequest:
-      type: object
-      required:
-        - email
-        - password
-      properties:
-        email:
-          type: string
-          format: email
-          example: nam@example.com
-        password:
-          type: string
-          format: password
-          example: "123456"
-
-    LoginResponse:
-      type: object
-      properties:
-        accessToken:
-          type: string
-          example: eyJhbGciOi...
-        user:
-          $ref: '#/components/schemas/User'
-
-    TOTPRequiredResponse:
-      type: object
-      properties:
-        requireTOTP:
-          type: boolean
-          example: true
-        message:
-          type: string
-          example: TOTP verification required
-
-    TOTPVerifyRequest:
-      type: object
-      required:
-        - email
-        - code
-      properties:
-        email:
-          type: string
-          format: email
-          example: nam@example.com
-        code:
-          type: string
-          pattern: '^\d{6}$'
-          example: "123456"
-
-    TOTPSetupResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: TOTP secret generated
-        totpSetup:
-          type: object
-          properties:
-            secret:
-              type: string
-              example: NB2W45DFOIZA====
-            qrCode:
-              type: string
-              example: data:image/png;base64,...
-
-    FileUploadRequest:
-      type: object
-      required:
-        - file
-      properties:
-        file:
-          type: string
-          format: binary
-          description: File cần upload
-        isPublic:
-          type: boolean
-          default: true
-          description: File public hay private
-        password:
-          type: string
-          minLength: 6
-          description: Mật khẩu bảo vệ (min 6 ký tự)
-        availableFrom:
-          type: string
-          format: date-time
-          description: Thời điểm bắt đầu hiệu lực
-          example: "2025-11-10T00:00:00Z"
-        availableTo:
-          type: string
-          format: date-time
-          description: Thời điểm kết thúc hiệu lực
-          example: "2025-11-17T00:00:00Z"
-        sharedWith:
-          type: array
-          items:
-            type: string
-            format: email
-          description: Danh sách email được phép tải
-          example: ["user1@example.com", "user2@example.com"]
-        enableTOTP:
-          type: boolean
-          default: false
-          description: Bật xác thực TOTP khi tải file
-
-    FileUploadResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-          example: true
-        file:
-          $ref: '#/components/schemas/File'
-        message:
-          type: string
-          example: File uploaded successfully
-
-    File:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-          example: 550e8400-e29b-41d4-a716-446655440000
-        fileName:
-          type: string
-          example: document.pdf
-        fileSize:
-          type: integer
-          description: Kích thước file (bytes)
-          example: 2048576
-        mimeType:
-          type: string
-          example: application/pdf
-        shareToken:
-          type: string
-          example: a1b2c3d4e5f6g7h8
-        shareLink:
-          type: string
-          format: uri
-          example: https://example.com/f/a1b2c3d4e5f6g7h8
-        isPublic:
-          type: boolean
-          example: false
-        hasPassword:
-          type: boolean
-          example: true
-        availableFrom:
-          type: string
-          format: date-time
-          example: "2025-11-10T00:00:00Z"
-        availableTo:
-          type: string
-          format: date-time
-          example: "2025-11-17T00:00:00Z"
-        validityDays:
-          type: integer
-          example: 7
-        status:
-          type: string
-          enum: [pending, active, expired]
-          description: |
-            - pending: Chưa đến availableFrom
-            - active: Trong thời gian hiệu lực
-            - expired: Đã hết hạn
-          example: active
-        hoursRemaining:
-          type: number
-          description: Số giờ còn lại đến hết hạn
-          example: 120.5
-        sharedWith:
-          type: array
-          items:
-            type: string
-            format: email
-          example: ["user1@example.com", "user2@example.com"]
-        enableTOTP:
-          type: boolean
-          example: false
-        owner:
-          $ref: '#/components/schemas/User'
-        createdAt:
-          type: string
-          format: date-time
-          example: "2025-11-04T12:00:00Z"
-
-    FileInfoResponse:
-      type: object
-      properties:
-        file:
-          $ref: '#/components/schemas/File'
-
-    MyFilesResponse:
-      type: object
-      properties:
-        files:
-          type: array
-          items:
-            $ref: '#/components/schemas/File'
-        pagination:
-          type: object
-          properties:
-            currentPage:
-              type: integer
-              example: 1
-            totalPages:
-              type: integer
-              example: 3
-            totalFiles:
-              type: integer
-              example: 42
-            limit:
-              type: integer
-              example: 20
-        summary:
-          type: object
-          properties:
-            activeFiles:
-              type: integer
-              example: 28
-            pendingFiles:
-              type: integer
-              example: 5
-            expiredFiles:
-              type: integer
-              example: 9
-
-    SystemPolicy:
-      type: object
-      properties:
-        id:
-          type: integer
-          example: 1
-        maxFileSizeMB:
-          type: integer
-          example: 50
-        minValidityHours:
-          type: integer
-          example: 1
-        maxValidityDays:
-          type: integer
-          example: 30
-        defaultValidityDays:
-          type: integer
-          example: 7
-        requirePasswordMinLength:
-          type: integer
-          example: 6
-
-    SystemPolicyUpdate:
-      type: object
-      properties:
-        maxFileSizeMB:
-          type: integer
-          minimum: 1
-          example: 100
-        minValidityHours:
-          type: integer
-          minimum: 1
-          example: 1
-        maxValidityDays:
-          type: integer
-          minimum: 1
-          example: 14
-        defaultValidityDays:
-          type: integer
-          minimum: 1
-          example: 5
-        requirePasswordMinLength:
-          type: integer
-          minimum: 4
-          example: 8
-
-    User:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-          example: 550e8400-e29b-41d4-a716-446655440000
-        username:
-          type: string
-          example: nam123
-        email:
-          type: string
-          format: email
-          example: nam@example.com
-        role:
-          type: string
-          enum: [user, admin]
-          example: user
-        totpEnabled:
-          type: boolean
-          example: true
-
-    Error:
-      type: object
-      properties:
-        error:
-          type: string
-          example: Error message
-        message:
-          type: string
-          example: Detailed error description
-        code:
-          type: string
-          example: VALIDATION_ERROR
-
-  responses:
-    BadRequest:
-      description: Invalid request
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: Validation error
-            message: Invalid input data
-
-    Unauthorized:
-      description: Unauthorized - Missing or invalid token
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: Unauthorized
-            message: Invalid or missing authentication token
-
-    Forbidden:
-      description: Forbidden - Insufficient permissions
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: Forbidden
-            message: You don't have permission to access this resource
-
-    NotFound:
-      description: Resource not found
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: Not found
-            message: The requested resource was not found
+                  message: { type: string, example: "Cleanup completed" }
+                  deletedFiles: { type: integer, example: 15 }
+                  timestamp: { type: string, format: date-time }
