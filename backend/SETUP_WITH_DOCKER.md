@@ -81,7 +81,7 @@ cd backend
 ## 4. Reset hoàn toàn
 
 ```bash
-make docker-clean    # Xóa containers + volumes
+make docker-clean    # Xóa containers + volumes, nhớ tắt Telex rồi gõ nhé
 make setup           # Setup lại từ đầu
 ```
 

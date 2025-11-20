@@ -17,8 +17,6 @@ type File struct {
 	OwnerID       *uuid.UUID `gorm:"type:uuid;index" json:"owner_id"`
 	IsPublic      bool       `gorm:"default:true" json:"is_public"`
 	PasswordHash  *string    `gorm:"type:varchar(255)" json:"-"`
-	TOTPSecret    *string    `gorm:"type:varchar(32)" json:"-"`
-	TOTPEnabled   bool       `gorm:"default:false" json:"totp_enabled"`
 	AvailableFrom *time.Time `gorm:"type:timestamp with time zone" json:"available_from"`
 	AvailableTo   *time.Time `gorm:"type:timestamp with time zone" json:"available_to"`
 	CreatedAt     time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`

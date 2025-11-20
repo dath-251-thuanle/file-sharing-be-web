@@ -38,13 +38,6 @@ CREATE TABLE files (
                                                -- Private files: only owner and shared_with users
     password_hash VARCHAR(255),                -- Optional password protection (bcrypt hash)
     
-    -- TOTP protection (2FA for downloads)
-    -- Use case: Owner suspects password leaked, enables TOTP
-    -- Downloader must contact owner to get OTP code (via phone/chat/meeting)
-    -- Similar to Zalo Web login requiring verification from another device
-    totp_secret VARCHAR(32),                   -- TOTP secret for generating OTP codes
-    totp_enabled BOOLEAN DEFAULT FALSE,        -- Enable/disable TOTP requirement
-    
     -- Availability window
     available_from TIMESTAMP WITH TIME ZONE,   -- File becomes available at this time
     available_to TIMESTAMP WITH TIME ZONE,     -- File expires at this time
@@ -127,19 +120,3 @@ CREATE TABLE download_history (
 CREATE INDEX idx_download_history_file_id ON download_history(file_id);  -- Get download history for a file
 CREATE INDEX idx_download_history_downloader_id ON download_history(downloader_id);  -- Get user's download history
 CREATE INDEX idx_download_history_downloaded_at ON download_history(downloaded_at DESC);  -- Sort by recency
-
--- Password reset tokens for forgot password flow
--- Tokens are one-time use and expire after 30 minutes
--- API endpoints: POST /auth/password/forgot, POST /auth/password/reset
-CREATE TABLE password_reset_tokens (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token VARCHAR(64) UNIQUE NOT NULL,  -- Random secure token (crypto.randomBytes(32).toString('hex'))
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    used BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_reset_tokens_token ON password_reset_tokens(token);
-CREATE INDEX idx_reset_tokens_expires ON password_reset_tokens(expires_at);
-CREATE INDEX idx_reset_tokens_user ON password_reset_tokens(user_id);
