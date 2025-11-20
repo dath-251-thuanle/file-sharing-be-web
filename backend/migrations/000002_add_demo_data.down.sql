@@ -1,9 +1,6 @@
 -- Remove all demo data
 -- Execute in reverse order of creation to avoid foreign key constraints
 
--- Delete password reset tokens
-DELETE FROM password_reset_tokens WHERE token LIKE 'demo_%';
-
 -- Delete download history
 DELETE FROM download_history 
 WHERE file_id IN (

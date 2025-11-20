@@ -67,6 +67,7 @@ func Close() error {
 	return nil
 }
 
-func AutoMigrate(models ...interface{}) error {
-	return DB.AutoMigrate(models...)
+// GetDB returns the database instance
+func GetDB() *gorm.DB {
+	return DB
 }
