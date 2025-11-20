@@ -4,7 +4,7 @@ Backend API cho hệ thống chia sẻ file tạm thời, được xây dựng b
 
 ## ⚡ Quick Start
 
-Toàn bộ hướng dẫn setup/chạy (Docker, Windows, manual) đã gộp tại [`SETUP.md`](./SETUP.md).  
+Toàn bộ hướng dẫn setup/chạy (Docker, Windows, manual) đã gộp tại [`SETUP.md`](./SETUP.md).
 Làm theo file đó để khởi chạy hệ thống.
 
 ## 🚀 Tính năng
@@ -33,22 +33,14 @@ Các bước cài đặt/khởi chạy (Docker + manual) → xem [`SETUP.md`](./
 
 ### API Specs
 
-- OpenAPI YAML: `docs/openapi.yaml`
-- Swagger JSON: `docs/swagger.json`
-- Markdown: `docs/API_DOCUMENTATION.md`
+- OpenAPI YAML: `docs/openapi.yaml` (single source of truth)
+- Markdown overview: `docs/API_DOCUMENTATION.md`
 
-### Generate Swagger docs
+### Cách sử dụng `openapi.yaml`
 
-```bash
-# Cài swag CLI
-go install github.com/swaggo/swag/cmd/swag@latest
-
-# Generate docs
-make swagger
-
-# Hoặc
-swag init -g cmd/server/main.go -o docs/swagger
-```
+- Import trực tiếp vào Postman/Hoppscotch để sinh collection test.
+- Sử dụng các plugin OpenAPI trong IDE (VS Code, JetBrains, …) để xem schemas và verify hợp lệ.
+- Có thể chạy `npx @redocly/cli lint docs/openapi.yaml` (hoặc công cụ tương tự) trong CI để bảo đảm spec không bị lỗi.
 
 ## 🔧 Makefile Commands
 
@@ -74,9 +66,6 @@ make docker-down      # Docker compose down
 make lint             # Run linter
 make fmt              # Format code
 make vet              # Run go vet
-
-# Documentation
-make swagger          # Generate Swagger docs
 
 # Cleanup
 make clean            # Clean build artifacts
@@ -113,28 +102,27 @@ backend/
 │   ├── integration/      # Integration tests (TODO)
 │   └── unit/             # Unit tests (TODO)
 ├── docs/
-│   ├── openapi.yaml      # OpenAPI specification ✅
-│   ├── swagger.json      # Swagger JSON ✅
-│   └── API_DOCUMENTATION.md  # API guide ✅
+│   ├── openapi.yaml      # OpenAPI specification 
+│   └── API_DOCUMENTATION.md  # API guide
 ├── .github/
 │   └── workflows/        # CI/CD workflows
-├── .env.example          # Environment template ✅
-├── .env                  # Environment variables ✅
-├── .gitignore            # Git ignore ✅
+├── .env.example          # Environment template 
+├── .env                  # Environment variables
+├── .gitignore            # Git ignore 
 ├── .dockerignore         # Docker ignore
 ├── Dockerfile            # Docker configuration
 ├── docker-compose.yml    # Docker Compose
-├── go.mod                # Go modules ✅
+├── go.mod                # Go modules 
 ├── go.sum                # Go dependencies checksum
-├── Makefile              # Build commands ✅
-└── README.md             # This file ✅
+├── Makefile              # Build commands 
+└── README.md             # This file 
 ```
 
 ## 🔐 Environment Variables
 
 Xem file `.env.example` để biết tất cả biến môi trường cần thiết.
 
-### Quan trọng:
+### Environment example:
 
 ```env
 # Database

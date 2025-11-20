@@ -224,7 +224,7 @@ Các endpoint tải file hỗ trợ nhiều lớp bảo mật đồng thời. Ba
 ```
 POST /files/upload
 → Nhận shareToken
-→ Chia sẻ link: https://exampledomain.com/f/{shareToken}
+→ Chia sẻ link: https://domain.com/f/{shareToken}
 ```
 
 #### 2. Upload với Password Protection
@@ -247,20 +247,23 @@ Body: {
 → Chỉ user1 và user2 có thể download (cần đăng nhập)
 ```
 
-#### 4. Owner Xem Ai Đã Download File
+#### 5. Owner Xem Ai Đã Download File
 
 ```
 1. GET /files/{id}/stats → Tổng quan
 2. GET /files/{id}/download-history → Chi tiết từng lượt download
 ```
 
-#### 5. Download File Có Nhiều Lớp Bảo Mật
+#### 6. Download File Có Nhiều Lớp Bảo Mật
 
 ```
-File có: password + whitelist
+File có: password + TOTP + whitelist
 
 1. Đăng nhập (để pass whitelist check)
-2. GET /files/{shareToken}/download?password=secret123
+2. Gọi POST /files/{shareToken}/totp/validate
+   Body: { code: "123456", password: "secret123" }
+   → Nhận downloadToken
+3. GET /files/{shareToken}/download?downloadToken=xxx
 ```
 
 ### Migration Commands
