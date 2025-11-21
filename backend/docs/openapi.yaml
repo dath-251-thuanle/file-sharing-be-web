@@ -64,7 +64,7 @@ paths:
                 value:
                   username: nam123
                   email: nam@example.com
-                  password: "123456"
+                  password: "passwordtest"
       responses:
         '200':
           description: Đăng ký thành công
@@ -361,14 +361,137 @@ paths:
     get:
       tags:
         - Authentication
-      summary: Lấy thông tin user và danh sách file
+      summary: Lấy thông tin profile của user hiện tại
       description: |
-        Lấy thông tin profile của user hiện tại (đã đăng nhập) và danh sách tất cả file đã upload.
+        Trả về thông tin profile của user hiện tại (id, username, email, role, totpEnabled, TOTP status, ...).
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Thông tin user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+              examples:
+                success:
+                  summary: Thông tin user
+                  value:
+                    user:
+                      id: 550e8400-e29b-41d4-a716-446655440000
+                      username: nam123
+                      email: nam@example.com
+                      role: user
+                      totpEnabled: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /files/upload:
+    post:
+      tags:
+        - Files
+      summary: Upload file
+      description: |
+        Upload file mới và tạo share link.
+        Authorization header là optional - nếu không có thì anonymous upload (chỉ upload được file public).
+        
+        **Lưu ý:**
+        - Các cấu hình private (`isPublic = false`, dùng whitelist `sharedWith`, password nâng cao) yêu cầu Bearer token để hệ thống gắn owner.
+        - Anonymous upload luôn `isPublic = true` và không thể chỉnh sửa/xóa file sau khi upload.
+        - Thời gian hiệu lực được validate theo system policy: `availableFrom` phải nhỏ hơn hoặc bằng `availableTo`, `availableTo` không được nằm trong quá khứ và tổng thời gian hiệu lực không vượt quá `maxValidityDays`. Nếu bỏ trống, backend tự áp dụng logic mặc định (FROM+TO/Chỉ FROM/Chỉ TO/Không có) như mô tả ở phần Validity Period.
+      security:
+        - BearerAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FileUploadRequest'
+      responses:
+        '201':
+          description: Upload thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadResponse'
+              examples:
+                success:
+                  summary: Upload thành công
+                  value:
+                    success: true
+                    message: File uploaded successfully
+                    file:
+                      id: 550e8400-e29b-41d4-a716-446655440000
+                      fileName: report.pdf
+                      shareToken: a1b2c3d4e5f6g7h8
+                    totpSetup:
+                      secret: NB2W45DFOIZA====
+                      qrCode: data:image/png;base64,iVBORw0KGgo...
+        '400':
+          description: Thiếu file hoặc vi phạm validation (password quá ngắn, cấu hình thời gian không hợp lệ, ... )
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missingFile:
+                  summary: Không gửi file trong form-data
+                  value:
+                    error: Validation error
+                    message: File is required
+                weakPassword:
+                  summary: Password < 8 ký tự
+                  value:
+                    error: Validation error
+                    message: Password must have at least 8 characters
+                invalidValidityRange:
+                  summary: Thời gian hiệu lực không hợp lệ
+                  value:
+                    error: Validation error
+                    message: availableFrom must be before availableTo and within allowed policy window
+        '401':
+          description: Thiếu hoặc sai Bearer token (khi upload với quyền riêng tư)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missingToken:
+                  summary: Thiếu Authorization header
+                  value:
+                    error: Unauthorized
+                    message: Bearer token is required for authenticated uploads
+                privateRequiresAuth:
+                  summary: Anonymous không thể upload private
+                  value:
+                    error: Unauthorized
+                    message: Private uploads (isPublic=false/sharedWith) require authentication
+        '413':
+          description: File quá lớn
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                fileTooLarge:
+                  summary: File vượt quá giới hạn
+                  value:
+                    error: Payload too large
+                    message: File size exceeds the system limit
+
+  /files/my:
+    get:
+      tags:
+        - Files
+      summary: Lấy danh sách file của user hiện tại
+      description: |
+        Trả về danh sách file do user hiện tại upload (đã đăng nhập).
         
         **Bao gồm:**
-        - Thông tin user: id, username, email, role, totpEnabled
-        - Danh sách file: active, expired, pending, deleted
-        - Pagination và summary statistics
+        - Danh sách file kèm metadata (status, thời gian hiệu lực, bảo mật, ...)
+        - Pagination (`page`, `limit`) và tổng số file
+        - Summary (đếm active/pending/expired/deleted)
       security:
         - BearerAuth: []
       parameters:
@@ -410,21 +533,15 @@ paths:
             default: desc
       responses:
         '200':
-          description: Thông tin user và danh sách file
+          description: Danh sách file của user hiện tại
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserProfileResponse'
+                $ref: '#/components/schemas/UserFilesResponse'
               examples:
                 success:
-                  summary: Thông tin user và file
+                  summary: Danh sách file + pagination
                   value:
-                    user:
-                      id: 550e8400-e29b-41d4-a716-446655440000
-                      username: nam123
-                      email: nam@example.com
-                      role: user
-                      totpEnabled: true
                     files:
                       - id: 550e8400-e29b-41d4-a716-446655440001
                         fileName: document.pdf
@@ -446,85 +563,6 @@ paths:
                       deletedFiles: 0
         '401':
           $ref: '#/components/responses/Unauthorized'
-
-  /files/upload:
-    post:
-      tags:
-        - Files
-      summary: Upload file
-      description: |
-        Upload file mới và tạo share link.
-        Authorization header là optional - nếu không có thì anonymous upload.
-      security:
-        - BearerAuth: []
-        - {}
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/FileUploadRequest'
-      responses:
-        '201':
-          description: Upload thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FileUploadResponse'
-              examples:
-                success:
-                  summary: Upload thành công
-                  value:
-                    success: true
-                    message: File uploaded successfully
-                    file:
-                      id: 550e8400-e29b-41d4-a716-446655440000
-                      fileName: report.pdf
-                      shareToken: a1b2c3d4e5f6g7h8
-                    totpSetup:
-                      secret: NB2W45DFOIZA====
-                      qrCode: data:image/png;base64,iVBORw0KGgo...
-        '400':
-          description: Thiếu file hoặc vi phạm validation (password quá ngắn, availableTo < availableFrom, ... )
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                missingFile:
-                  summary: Không gửi file trong form-data
-                  value:
-                    error: Validation error
-                    message: File is required
-                weakPassword:
-                  summary: Password < 6 ký tự
-                  value:
-                    error: Validation error
-                    message: Password must have at least 6 characters
-        '401':
-          description: Thiếu hoặc sai Bearer token (khi upload với quyền riêng tư)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                missingToken:
-                  summary: Thiếu Authorization header
-                  value:
-                    error: Unauthorized
-                    message: Bearer token is required for authenticated uploads
-        '413':
-          description: File quá lớn
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                fileTooLarge:
-                  summary: File vượt quá giới hạn
-                  value:
-                    error: Payload too large
-                    message: File size exceeds the system limit
 
   /files/{id}:
     get:
@@ -788,6 +826,10 @@ paths:
         - Thời điểm download
         - Trạng thái (completed/interrupted)
         
+        **Quyền riêng tư:**
+        - Với anonymous download, hệ thống chỉ ghi nhận một bản ghi mang nhãn "Anonymous" cùng timestamp và trạng thái; **không log IP/User-Agent hoặc fingerprint**.
+        - Thông tin cá nhân (username/email) chỉ xuất hiện khi người tải đăng nhập và đồng ý với điều khoản sử dụng.
+        
         **Pagination:** Hỗ trợ phân trang với `page` và `limit`
       security:
         - BearerAuth: []
@@ -845,7 +887,7 @@ paths:
                             email:
                               type: string
                               nullable: true
-                          description: Null nếu là anonymous download
+                          description: Null nếu là anonymous download (chỉ ghi nhận "Anonymous" + timestamp, không lưu IP/User-Agent)
                         downloadedAt:
                           type: string
                           format: date-time
@@ -983,6 +1025,14 @@ paths:
         3. **Password** - Nếu file có password → yêu cầu query parameter `password` → 403 nếu sai/thiếu
         
         **Lưu ý:** Tất cả các lớp bảo mật phải pass thì mới được download. Bất kỳ lớp nào fail sẽ trả error tương ứng.
+        
+        **Owner preview trong giai đoạn pending:**
+        - Nếu requester là owner (JWT hợp lệ, `sub` trùng `file.owner.id`), hệ thống cho phép bypass trạng thái `pending` để chủ file có thể kiểm thử trước khi tới giờ.
+        - Tất cả user khác vẫn nhận 423 "File not yet available" cho tới khi `availableFrom` đến.
+        
+        **Notification khi file chuyển trạng thái:**
+        - Khuyến nghị cấu hình cronjob/background task gửi email/SMS/webhook khi file chuyển từ `pending` sang `active` để owner và whitelist nhận thông báo.
+        - Endpoint này không tự gửi notification; cần bật tính năng ở backend hoặc job scheduler (xem mục Appendices/Future Enhancements).
       security:
         - BearerAuth: []
         - {}
@@ -1103,6 +1153,12 @@ paths:
       description: |
         Xóa file hết hạn (Cron job hoặc Admin endpoint).
         Yêu cầu X-Cron-Secret header hoặc admin token.
+        
+        **Security best practices:**
+        - `X-Cron-Secret` phải được lưu trong môi trường bảo mật, hỗ trợ rotation định kỳ (ví dụ đổi secret hàng tuần/tháng).
+        - Nên triển khai rate limiting/IP allowlist để tránh bị spam cleanup (DOS).
+        - Mọi request tới endpoint này cần được log đầy đủ (timestamp, source, kết quả) để audit.
+        - Khuyến nghị triển khai song song xác thực bằng JWT admin đối với các tác vụ thủ công; secret chủ yếu dành cho job nội bộ.
       security:
         - BearerAuth: []
         - CronSecret: []
@@ -1162,6 +1218,18 @@ paths:
                   value:
                     error: Forbidden
                     message: Invalid cron secret
+        '429':
+          description: Vượt quá giới hạn gọi cleanup
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                rateLimited:
+                  summary: Cleanup bị giới hạn tần suất
+                  value:
+                    error: Too many requests
+                    message: Cleanup endpoint is rate limited. Please try again later.
 
   /admin/policy:
     get:
@@ -1185,7 +1253,7 @@ paths:
                     minValidityHours: 1
                     maxValidityDays: 30
                     defaultValidityDays: 7
-                    requirePasswordMinLength: 6
+                    requirePasswordMinLength: 8
         '401':
           description: Thiếu hoặc sai Bearer token
           content:
@@ -1295,7 +1363,11 @@ components:
       type: apiKey
       in: header
       name: X-Cron-Secret
-      description: Secret key cho cron job
+      description: |
+        Secret key cho cron job (lưu trong env, không commit vào repo).
+        - Nên thiết lập cơ chế rotation cố định (ví dụ đổi secret 30/60 ngày một lần hoặc khi có sự cố).
+        - Việc rotation gồm: tạo secret mới, cập nhật vào store an toàn (secret manager/CI), redeploy cron job, vô hiệu hóa secret cũ.
+        - Ghi log thời điểm tạo/thu hồi secret để phục vụ audit.
 
   parameters:
     ShareToken:
@@ -1327,9 +1399,9 @@ components:
         password:
           type: string
           format: password
-          minLength: 6
-          description: Mật khẩu (tối thiểu 6 ký tự)
-          example: "123456"
+          minLength: 8
+          description: Mật khẩu (tối thiểu 8 ký tự)
+          example: "Passw0rd"
 
     RegisterResponse:
       type: object
@@ -1355,7 +1427,7 @@ components:
         password:
           type: string
           format: password
-          example: "123456"
+          example: "Passw0rd"
 
     LoginResponse:
       type: object
@@ -1419,27 +1491,27 @@ components:
         isPublic:
           type: boolean
           default: true
-          description: File public hay private
+          description: File public hay private (upload ẩn danh luôn = true)
         password:
           type: string
-          minLength: 6
-          description: Mật khẩu bảo vệ (min 6 ký tự)
+          minLength: 8
+          description: Mật khẩu bảo vệ (min 8 ký tự)
         availableFrom:
           type: string
           format: date-time
-          description: Thời điểm bắt đầu hiệu lực
+          description: Thời điểm bắt đầu hiệu lực (không được lớn hơn `availableTo` và không vượt quá khoảng thời gian cho phép trong `system_policy.maxValidityDays`)
           example: "2025-11-10T00:00:00Z"
         availableTo:
           type: string
           format: date-time
-          description: Thời điểm kết thúc hiệu lực
+          description: Thời điểm kết thúc hiệu lực (không nằm trong quá khứ, phải lớn hơn `availableFrom` và nhỏ hơn giới hạn `maxValidityDays`)
           example: "2025-11-17T00:00:00Z"
         sharedWith:
           type: array
           items:
             type: string
             format: email
-          description: Danh sách email được phép tải
+          description: Danh sách email được phép tải (yêu cầu authenticated upload)
           example: ["user1@example.com", "user2@example.com"]
 
     FileUploadResponse:
@@ -1528,10 +1600,15 @@ components:
 
     UserProfileResponse:
       type: object
-      description: Response cho GET /user - bao gồm thông tin user và danh sách file
+      description: Response cho GET /user - thông tin profile
       properties:
         user:
           $ref: '#/components/schemas/User'
+
+    UserFilesResponse:
+      type: object
+      description: Response cho GET /files/my - danh sách file của user hiện tại
+      properties:
         files:
           type: array
           items:
@@ -1592,7 +1669,7 @@ components:
           example: 7
         requirePasswordMinLength:
           type: integer
-          example: 6
+          example: 8
 
     SystemPolicyUpdate:
       type: object
