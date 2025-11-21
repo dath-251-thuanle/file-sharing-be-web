@@ -19,7 +19,7 @@
 
 ## API Specification
 
-Project sử dụng **OpenAPI 3.0.3** để định nghĩa API:
+Project sử dụng **OpenAPI 3.0.4** để định nghĩa API:
 
 ## Xem Documentation
 
@@ -67,11 +67,12 @@ Project sử dụng **OpenAPI 3.0.3** để định nghĩa API:
 - `POST /auth/totp/setup` - Thiết lập TOTP cho user (yêu cầu Bearer token)
 - `POST /auth/totp/verify` - Xác minh mã TOTP để kích hoạt 2FA (yêu cầu Bearer token)
 - `POST /auth/logout` - Đăng xuất
-- `GET /user` - Lấy thông tin user và danh sách file
+- `GET /user` - Lấy thông tin profile user hiện tại
 
 #### Files
 
 - `POST /files/upload` - Upload file
+- `GET /files/my` - Lấy danh sách file do user hiện tại upload
 - `GET /files/{id}` - Lấy thông tin file theo UUID (chỉ owner/admin)
 - `GET /files/{id}/stats` - Lấy thống kê download của file (chỉ owner/admin)
 - `GET /files/{id}/download-history` - Lấy lịch sử download chi tiết (chỉ owner/admin)
@@ -166,7 +167,7 @@ Lấy lịch sử download chi tiết (chỉ owner/admin).
 
 | Status      | Description                               |
 | ----------- | ----------------------------------------- |
-| `pending` | Chưa đến thời gian `availableFrom`  |
+| `pending` | Chưa đến thời gian `availableFrom`  (owner có thể preview bằng JWT, người khác nhận 423) |
 | `active`  | Đang trong thời gian hiệu lực         |
 | `expired` | Đã hết hạn (`availableTo` đã qua) |
 
@@ -179,6 +180,11 @@ Lấy lịch sử download chi tiết (chỉ owner/admin).
 | Chỉ FROM  | Hiệu lực từ FROM đến FROM + 7 ngày |
 | Không có | Hiệu lực từ hiện tại đến +7 ngày |
 
+**Validation bổ sung:**
+- `availableFrom` ≤ `availableTo`.
+- `availableTo` không nằm trong quá khứ tại thời điểm upload và không vượt quá `system_policy.maxValidityDays`.
+- Tổng thời gian hiệu lực phải nằm trong giới hạn policy; vi phạm → backend trả lỗi `invalidValidityRange`.
+
 ## Security
 
 ### Bearer Token (JWT)
@@ -189,10 +195,10 @@ Lấy lịch sử download chi tiết (chỉ owner/admin).
 
 ### X-Cron-Secret
 
-- Static secret key cho cron job
-- Cấu hình qua environment variable: `CRON_SECRET`
-- Dùng cho endpoint `/admin/cleanup`
-- Gửi qua header: `X-Cron-Secret: <secret>`
+- Secret key cho cron job (lưu trong env, không commit vào repo)
+- Nên thiết lập rotation cố định (ví dụ 30/60 ngày); quy trình: phát hành secret mới → cập nhật secret manager/CI → redeploy cron job → thu hồi secret cũ → ghi log thời điểm rotation
+- Dùng cho endpoint `/admin/cleanup`, song song hỗ trợ JWT admin cho thao tác thủ công
+- Gửi qua header: `X-Cron-Secret: <secret>` + áp dụng rate limiting/IP allowlist và log mọi request (timestamp, source, kết quả)
 
 ## Download Access Control
 
@@ -215,6 +221,10 @@ Các endpoint tải file hỗ trợ nhiều lớp bảo mật đồng thời. Ba
 | `410`   | `expired`         | File đã hết hạn                        |
 | `423`   | `pending`         | File chưa đến thời gian hiệu lực     |
 
+**Owner preview & notification:**
+- Chủ file (JWT hợp lệ, `sub` = ownerId) có thể bypass trạng thái `pending` để kiểm thử link; người khác vẫn nhận `423` cho tới khi `availableFrom` đến.
+- Khuyến nghị cấu hình cron/background job gửi email/SMS/webhook khi file chuyển từ `pending` sang `active` cho owner và whitelist; endpoint này không tự gửi thông báo.
+
 ## Quick Reference
 
 ### Common Use Cases
@@ -226,6 +236,8 @@ POST /files/upload
 → Nhận shareToken
 → Chia sẻ link: https://exampledomain.com/f/{shareToken}
 ```
+
+**Lưu ý:** Anonymous chỉ được upload file public, không đặt whitelist/password nâng cao và không thể chỉnh sửa/xóa sau khi upload. Muốn private → đăng nhập trước.
 
 #### 2. Upload với Password Protection
 
@@ -254,7 +266,14 @@ Body: {
 2. GET /files/{id}/download-history → Chi tiết từng lượt download
 ```
 
-#### 5. Download File Có Nhiều Lớp Bảo Mật
+#### 5. Owner Xem Danh Sách File Của Mình
+
+```
+GET /files/my?status=all&page=1&limit=20
+→ Nhận danh sách file + pagination + summary (active/pending/expired/deleted)
+```
+
+#### 6. Download File Có Nhiều Lớp Bảo Mật
 
 ```
 File có: password + whitelist
