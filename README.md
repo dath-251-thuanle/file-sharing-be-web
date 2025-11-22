@@ -2,10 +2,23 @@
 
 Backend API cho hệ thống chia sẻ file tạm thời, được xây dựng bằng **Golang** với **Gin Framework** và **PostgreSQL**.
 
-## ⚡ Quick Start
+## Quick Start
 
-Toàn bộ hướng dẫn setup/chạy (Docker, Windows, manual) đã gộp tại [`SETUP.md`](./SETUP.md).  
+Toàn bộ hướng dẫn setup/chạy (Docker, Windows, manual) đã gộp tại [`SETUP.md`](./SETUP.md).
 Làm theo file đó để khởi chạy hệ thống.
+
+## Danh Sách Thành Viên
+
+| STT | Họ và Tên              | Mã Số Sinh Viên |
+| --- | ------------------------- | ------------------ |
+| 1   | Nguyễn Nhật Huy         | 2311197            |
+| 2   | Tô Thế Hưng            | 2211384            |
+| 3   | Nguyễn Phạm Mạnh Dũng | 2310559            |
+| 4   | Đặng Thành Duy Đan    | 2310615            |
+| 5   | Phan Đình Khang         | 2311459            |
+| 6   | Võ Tiến Nam             | 2312205            |
+| 7   | Nguyễn Hữu Minh Khôi   | 2352614            |
+| 8   | Nguyễn Huỳnh Gia Đại  | 2310624            |
 
 ## 🚀 Tính năng
 
