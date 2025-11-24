@@ -11,12 +11,12 @@ server:
   shutdown_timeout: 30s
 
 database:
-  host: "localhost"
-  port: 5432
-  user: "postgres"
-  password: "postgres"
-  name: "file_sharing_db"
-  sslmode: "disable"
+  host: "localhost"        # Override via DATABASE_HOST
+  port: 5432               # Override via DATABASE_PORT
+  user: "postgres"         # Override via DATABASE_USER
+  password: "postgres"     # Override via DATABASE_PASSWORD
+  name: "file_sharing_db"  # Override via DATABASE_NAME
+  sslmode: "disable"       # Override via DATABASE_SSLMODE
   timezone: "Asia/Ho_Chi_Minh"
   max_open_conns: 25
   max_idle_conns: 5
@@ -38,6 +38,16 @@ storage:
   max_file_size_mb: 50
   allowed_mime_types:
     - "*" # Allow all, or specify: ["image/jpeg", "image/png", "application/pdf"]
+
+cloud_storage:
+  enabled: true
+  provider: "azure"
+  endpoint: "https://<account>.blob.core.windows.net" # CLOUD_STORAGE_ENDPOINT
+  access_key: "<storage-account-name>"                # CLOUD_STORAGE_ACCESS_KEY
+  secret_key: "<account-key-or-sas-token>"            # CLOUD_STORAGE_SECRET_KEY
+  public_container: "<public-container>"              # CLOUD_STORAGE_PUBLIC_CONTAINER
+  private_container: "<private-container>"            # CLOUD_STORAGE_PRIVATE_CONTAINER
+  region: "" # Không cần cho Azure, giữ để tương thích
 
 system_policy:
   default_validity_days: 7
@@ -93,15 +103,6 @@ email:
   username: ""
   password: ""
   from: "noreply@filesharing.com"
-
-# Optional: Cloud storage (S3/MinIO)
-cloud_storage:
-  enabled: false
-  endpoint: ""
-  access_key: ""
-  secret_key: ""
-  bucket: ""
-  region: "us-east-1"
 
 # Optional: Metrics
 metrics:

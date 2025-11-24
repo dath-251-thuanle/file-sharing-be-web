@@ -67,6 +67,17 @@ type StorageConfig struct {
 	AllowedMimeTypes []string `mapstructure:"allowed_mime_types"`
 }
 
+type CloudStorageConfig struct {
+	Enabled          bool   `mapstructure:"enabled"`
+	Provider         string `mapstructure:"provider"` // e.g. "azure"
+	Endpoint         string `mapstructure:"endpoint"`
+	AccessKey        string `mapstructure:"access_key"`          // Azure: Storage Account Name
+	SecretKey        string `mapstructure:"secret_key"`          // Azure: Storage Account Key / SAS
+	PublicContainer  string `mapstructure:"public_container"`    // Azure: public container name
+	PrivateContainer string `mapstructure:"private_container"`   // Azure: private container name
+	Region           string `mapstructure:"region"`              // Azure: optional, keep for consistency
+}
+
 type SystemPolicyConfig struct {
 	DefaultValidityDays int `mapstructure:"default_validity_days"`
 	MinValidityHours    int `mapstructure:"min_validity_hours"`
@@ -116,15 +127,6 @@ type EmailConfig struct {
 	From     string `mapstructure:"from"`
 }
 
-type CloudStorageConfig struct {
-	Enabled   bool   `mapstructure:"enabled"`
-	Endpoint  string `mapstructure:"endpoint"`
-	AccessKey string `mapstructure:"access_key"`
-	SecretKey string `mapstructure:"secret_key"`
-	Bucket    string `mapstructure:"bucket"`
-	Region    string `mapstructure:"region"`
-}
-
 type MetricsConfig struct {
 	Enabled bool `mapstructure:"enabled"`
 	Port    int  `mapstructure:"port"`
@@ -171,6 +173,29 @@ func Load() (*Config, error) {
 	}
 	if jwtSecret := os.Getenv("JWT_SECRET"); jwtSecret != "" {
 		cfg.JWT.Secret = jwtSecret
+	}
+	
+	// Override cloud storage settings from environment
+	if enabled := os.Getenv("CLOUD_STORAGE_ENABLED"); enabled != "" {
+		cfg.CloudStorage.Enabled = enabled == "true"
+	}
+	if provider := os.Getenv("CLOUD_STORAGE_PROVIDER"); provider != "" {
+		cfg.CloudStorage.Provider = provider
+	}
+	if endpoint := os.Getenv("CLOUD_STORAGE_ENDPOINT"); endpoint != "" {
+		cfg.CloudStorage.Endpoint = endpoint
+	}
+	if accessKey := os.Getenv("CLOUD_STORAGE_ACCESS_KEY"); accessKey != "" {
+		cfg.CloudStorage.AccessKey = accessKey
+	}
+	if secretKey := os.Getenv("CLOUD_STORAGE_SECRET_KEY"); secretKey != "" {
+		cfg.CloudStorage.SecretKey = secretKey
+	}
+	if publicContainer := os.Getenv("CLOUD_STORAGE_PUBLIC_CONTAINER"); publicContainer != "" {
+		cfg.CloudStorage.PublicContainer = publicContainer
+	}
+	if privateContainer := os.Getenv("CLOUD_STORAGE_PRIVATE_CONTAINER"); privateContainer != "" {
+		cfg.CloudStorage.PrivateContainer = privateContainer
 	}
 
 	return &cfg, nil

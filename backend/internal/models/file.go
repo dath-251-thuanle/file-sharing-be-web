@@ -15,7 +15,7 @@ type File struct {
 	FileSize      int64      `gorm:"type:bigint;not null" json:"file_size"`
 	MimeType      *string    `gorm:"type:varchar(100)" json:"mime_type"`
 	OwnerID       *uuid.UUID `gorm:"type:uuid;index" json:"owner_id"`
-	IsPublic      bool       `gorm:"default:true" json:"is_public"`
+	IsPublic      *bool       `gorm:"default:true" json:"is_public"`
 	PasswordHash  *string    `gorm:"type:varchar(255)" json:"-"`
 	AvailableFrom *time.Time `gorm:"type:timestamp with time zone" json:"available_from"`
 	AvailableTo   *time.Time `gorm:"type:timestamp with time zone" json:"available_to"`

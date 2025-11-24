@@ -14,8 +14,8 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-      - ./database/demo_queries.sql:/docker-entrypoint-initdb.d/02-demo.sql
+      - ./pkg/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./pkg/database/demo_queries.sql:/docker-entrypoint-initdb.d/02-demo.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 10s
@@ -38,11 +38,18 @@ services:
       - DB_PORT=5432
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_NAME=${DB_NAME:-file_sharing_db}
+      - DB_NAME=${DB_NAME}
       - JWT_SECRET=${JWT_SECRET:-dev_secret_key_minimum_32_characters_long}
       - STORAGE_PATH=/app/storage/uploads
+      - CLOUD_STORAGE_ENABLED=${CLOUD_STORAGE_ENABLED:-true}
+      - CLOUD_STORAGE_PROVIDER=${CLOUD_STORAGE_PROVIDER:-azure}
+      - CLOUD_STORAGE_ENDPOINT=${CLOUD_STORAGE_ENDPOINT:-https://dathhcmut20251.blob.core.windows.net}
+      - CLOUD_STORAGE_ACCESS_KEY=${CLOUD_STORAGE_ACCESS_KEY:-dathhcmut20251}
+      - CLOUD_STORAGE_SECRET_KEY=${CLOUD_STORAGE_SECRET_KEY}
+      - CLOUD_STORAGE_PUBLIC_CONTAINER=${CLOUD_STORAGE_PUBLIC_CONTAINER:-public-file}
+      - CLOUD_STORAGE_PRIVATE_CONTAINER=${CLOUD_STORAGE_PRIVATE_CONTAINER:-private-file}
     ports:
-      - "8080:8080"
+      - "8082:8080"
     volumes:
       - .:/app
       - app_storage:/app/storage/uploads
@@ -67,6 +74,18 @@ services:
     environment:
       - APP_ENV=production
       - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-file_sharing_db}
+      - JWT_SECRET=${JWT_SECRET:-dev_secret_key_minimum_32_characters_long}
+      - CLOUD_STORAGE_ENABLED=true
+      - CLOUD_STORAGE_PROVIDER=azure
+      - CLOUD_STORAGE_ENDPOINT=${CLOUD_STORAGE_ENDPOINT}
+      - CLOUD_STORAGE_ACCESS_KEY=${CLOUD_STORAGE_ACCESS_KEY}
+      - CLOUD_STORAGE_SECRET_KEY=${CLOUD_STORAGE_SECRET_KEY}
+      - CLOUD_STORAGE_PUBLIC_CONTAINER=${CLOUD_STORAGE_PUBLIC_CONTAINER:-public-file}
+      - CLOUD_STORAGE_PRIVATE_CONTAINER=${CLOUD_STORAGE_PRIVATE_CONTAINER:-private-file}
     ports:
       - "${APP_PORT:-8080}:8080"
     volumes:
