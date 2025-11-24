@@ -2,7 +2,7 @@
 
 Backend API cho hệ thống chia sẻ file tạm thời, được xây dựng bằng **Golang** với **Gin Framework** và **PostgreSQL**.
 
-## Quick Start
+## ⚡ Quick Start
 
 Toàn bộ hướng dẫn setup/chạy (Docker, Windows, manual) đã gộp tại [`SETUP.md`](./SETUP.md).
 Làm theo file đó để khởi chạy hệ thống.
