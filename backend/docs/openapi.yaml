@@ -1499,12 +1499,22 @@ components:
         availableFrom:
           type: string
           format: date-time
-          description: Thời điểm bắt đầu hiệu lực (không được lớn hơn `availableTo` và không vượt quá khoảng thời gian cho phép trong `system_policy.maxValidityDays`)
+          description: |
+            Thời điểm bắt đầu hiệu lực (không được lớn hơn `availableTo` và không vượt quá khoảng thời gian cho phép trong `system_policy.maxValidityDays`).
+            
+            **Mặc định:** Nếu cả `availableFrom` và `availableTo` đều null, hệ thống tự động set:
+            - `availableFrom` = thời điểm hiện tại
+            - `availableTo` = thời điểm hiện tại + 7 ngày (default_validity_days)
           example: "2025-11-10T00:00:00Z"
         availableTo:
           type: string
           format: date-time
-          description: Thời điểm kết thúc hiệu lực (không nằm trong quá khứ, phải lớn hơn `availableFrom` và nhỏ hơn giới hạn `maxValidityDays`)
+          description: |
+            Thời điểm kết thúc hiệu lực (không nằm trong quá khứ, phải lớn hơn `availableFrom` và nhỏ hơn giới hạn `maxValidityDays`).
+            
+            **Mặc định:** Nếu cả `availableFrom` và `availableTo` đều null, hệ thống tự động set:
+            - `availableFrom` = thời điểm hiện tại
+            - `availableTo` = thời điểm hiện tại + 7 ngày (default_validity_days)
           example: "2025-11-17T00:00:00Z"
         sharedWith:
           type: array

@@ -1,95 +1,117 @@
-# 📘 Setup Instructions
+# 🚀 Setup Instructions
+
+Hướng dẫn cài đặt và chạy File Sharing API
 
 ---
 
-## 1. Docker (Linux / macOS / Git Bash / WSL)
+## 📋 Yêu cầu
+
+- Docker & Docker Compose
+- WSL (nếu dùng Windows)
+
+---
+
+## ⚡ Quick Start
+
+### 1. Clone & Setup
 
 ```bash
 cd backend
 
-# Lần đầu (start Postgres + chạy migrations)
-make setup
+# Tạo file .env (nếu chưa có)
+cp .env.example .env
 
-# Chạy môi trường dev (api: http://localhost:8080)
+# Chỉnh sửa .env nếu cần (điền Azure credentials, JWT secret, etc.)
+```
+
+### 2. Build Docker Images
+
+```bash
+make build
+```
+
+### 3. Chạy Development
+
+```bash
+# Chạy development (hot reload)
 make dev
 
-# Dừng tất cả containers
-make docker-down
+# API sẽ chạy tại: http://localhost:8082
 ```
 
-### Lệnh hữu ích
+### 4. Hoặc chạy Production
 
 ```bash
-make migrate-up          # Apply migrations
-make migrate-down        # Rollback 1 migration
-make migrate-version     # Xem version hiện tại
-make db-shell            # Mở psql trong container
-make logs-app            # Xem app logs
-make logs-db             # Xem database logs
+# Chạy production app
+make app
+
+# API sẽ chạy tại: http://localhost:8080
 ```
 
 ---
 
-## 2. Windows PowerShell (không cần Make)
+## 🔧 Các lệnh thường dùng
 
-```powershell
-cd backend
+```bash
+# Development
+make dev              # Chạy dev (port 8082)
+make app              # Chạy production (port 8080)
+make build            # Build Docker images
 
-.\dev.ps1 setup      # Setup DB + migrations (Docker)
-.\dev.ps1 dev        # Chạy dev
-.\dev.ps1 down       # Dừng tất cả
-```
+# Control
+make down             # Dừng tất cả services
+make restart          # Restart dev environment
 
-Các lệnh khác (tương đương Make):
+# Logs
+make logs             # Xem logs tất cả services
+make logs-dev         # Xem logs dev only
+make logs-app         # Xem logs production app only
 
-```powershell
-.\dev.ps1 migrate-up
-.\dev.ps1 migrate-down
-.\dev.ps1 migrate-version
-.\dev.ps1 db-shell
-.\dev.ps1 logs
+# Database
+make db-reset         # Reset database (xóa data + restart)
+make db-shell         # Mở PostgreSQL shell
+
+# Cleanup
+make clean            # Xóa tất cả (containers + volumes + data)
 ```
 
 ---
 
-## 3. Manual Setup (không dùng Docker)
+## 🎯 Port Mapping
 
-Chỉ dùng khi cần chạy PostgreSQL local.
+| Service | Port | URL |
+|---------|------|-----|
+| Development API | 8082 | http://localhost:8082 |
+| Production API | 8080 | http://localhost:8080 |
+| PostgreSQL | 5432 | localhost:5432 |
 
-### Linux / WSL
+---
 
-```bash
-cd backend
-./scripts/setup-db.sh setup      # Cài Postgres + create DB + migrate
-./scripts/setup-db.sh migrate    # Chỉ chạy migrations
-./scripts/setup-db.sh up         # Apply pending migrations
-./scripts/setup-db.sh down 1     # Rollback 1 migration
-./scripts/setup-db.sh version    # Xem version
-```
+## 🐛 Troubleshooting
 
-### Windows PowerShell
-
-```powershell
-cd backend
-.\scripts\setup-db.ps1 setup
-.\scripts\setup-db.ps1 migrate
-.\scripts\setup-db.ps1 up
-.\scripts\setup-db.ps1 down 1
-.\scripts\setup-db.ps1 version
-```
-
-## 4. Reset hoàn toàn
+### Port đã được sử dụng
 
 ```bash
-make docker-clean    # Xóa containers + volumes, nhớ tắt Telex rồi gõ nhé
-make setup           # Setup lại từ đầu
+# Windows
+netstat -ano | findstr :8080
+taskkill /PID <PID> /F
+
+# Linux/WSL
+lsof -i :8080
+kill -9 <PID>
 ```
 
-## 5. Test
+### Reset lại toàn bộ
 
 ```bash
-docker exec -it file-sharing-db bash # Mở shell để vào container Postgres
-psql -U postgres -d file_sharing_db  # Login vào PostgreSQL
-# Test bằng câu lệnh SQL
-SELECT * FROM users;
+make clean    # Xóa tất cả
+make build    # Build lại
+make dev      # Chạy lại
+```
+
+### Kiểm tra containers
+
+```bash
+make ps       # Xem containers đang chạy
+make logs     # Xem logs
 ```

@@ -12,7 +12,7 @@ type DownloadHistory struct {
 	FileID            uuid.UUID  `gorm:"type:uuid;not null;index" json:"file_id"`
 	DownloaderID      *uuid.UUID `gorm:"type:uuid;index" json:"downloader_id,omitempty"`
 	DownloadedAt      time.Time  `gorm:"default:CURRENT_TIMESTAMP;index" json:"downloaded_at"`
-	DownloadCompleted bool       `gorm:"default:true" json:"download_completed"`
+	DownloadCompleted *bool      `gorm:"default:true" json:"download_completed"`
 
 	File       File  `gorm:"foreignKey:FileID;constraint:OnDelete:CASCADE" json:"file,omitempty"`
 	Downloader *User `gorm:"foreignKey:DownloaderID;constraint:OnDelete:SET NULL" json:"downloader,omitempty"`
@@ -33,7 +33,7 @@ func RecordDownload(tx *gorm.DB, fileID uuid.UUID, downloaderID *uuid.UUID, comp
 	history := &DownloadHistory{
 		FileID:            fileID,
 		DownloaderID:      downloaderID,
-		DownloadCompleted: completed,
+		DownloadCompleted: &completed,
 	}
 	return tx.Create(history).Error
 }

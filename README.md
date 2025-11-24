@@ -4,8 +4,14 @@ Backend API cho hệ thống chia sẻ file tạm thời, được xây dựng b
 
 ## ⚡ Quick Start
 
-Toàn bộ hướng dẫn setup/chạy (Docker, Windows, manual) đã gộp tại [`SETUP.md`](./SETUP.md).
-Làm theo file đó để khởi chạy hệ thống.
+```bash
+cd backend
+cp .env.example .env    # Tạo file .env
+make build              # Build Docker images
+make dev                # Chạy development (port 8082)
+```
+
+Chi tiết đầy đủ xem tại [`backend/SETUP_WITH_DOCKER.md`](./backend/SETUP_WITH_DOCKER.md)
 
 ## Danh Sách Thành Viên
 
@@ -40,7 +46,7 @@ Làm theo file đó để khởi chạy hệ thống.
 
 ## 🛠️ Cài đặt
 
-Các bước cài đặt/khởi chạy (Docker + manual) → xem [`SETUP.md`](./SETUP.md).
+Xem hướng dẫn chi tiết tại [`backend/SETUP_WITH_DOCKER.md`](./backend/SETUP_WITH_DOCKER.md)
 
 ## 📚 API Documentation
 
@@ -63,36 +69,27 @@ make swagger
 swag init -g cmd/server/main.go -o docs/swagger
 ```
 
-## 🔧 Makefile Commands
+## 🔧 Make Commands
 
 ```bash
-# Development
-make run              # Chạy server (development mode)
-make build            # Build binary
-make test             # Chạy tests
-make test-coverage    # Test với coverage report
+# Main Commands
+make build            # Build Docker images
+make dev              # Start development (port 8082)
+make app              # Start production (port 8080)
+make down             # Stop all services
+make restart          # Restart dev environment
+
+# Logs
+make logs             # View all logs
+make logs-dev         # View dev logs
+make logs-app         # View app logs
 
 # Database
-make migrate-up       # Apply migrations
-make migrate-down     # Rollback migrations
-make db-seed          # Seed sample data
-
-# Docker
-make docker-build     # Build Docker image
-make docker-run       # Run Docker container
-make docker-up        # Docker compose up
-make docker-down      # Docker compose down
-
-# Code quality
-make lint             # Run linter
-make fmt              # Format code
-make vet              # Run go vet
-
-# Documentation
-make swagger          # Generate Swagger docs
+make db-reset         # Reset database
+make db-shell         # Open PostgreSQL shell
 
 # Cleanup
-make clean            # Clean build artifacts
+make clean            # Remove all containers & volumes
 ```
 
 ## 📁 Cấu trúc thư mục
@@ -245,29 +242,30 @@ Xem `.github/workflows/` để biết chi tiết.
 
 ## 🐛 Troubleshooting
 
-### Database connection error
+### Port đã được sử dụng
 
 ```bash
-# Kiểm tra PostgreSQL đang chạy
-pg_isready -h localhost -p 5432
+# Windows
+netstat -ano | findstr :8080
+taskkill /PID <PID> /F
 
-# Kiểm tra credentials trong .env
+# Linux/WSL
+lsof -i :8080
+kill -9 <PID>
 ```
 
-### Port already in use
+### Reset lại toàn bộ
 
 ```bash
-# Tìm process đang dùng port 8080
-netstat -ano | findstr :8080  # Windows
-lsof -i :8080                  # Linux/Mac
-
-# Kill process hoặc đổi port trong .env
+make clean    # Xóa tất cả
+make build    # Build lại
+make dev      # Chạy lại
 ```
 
-### Module not found
+### Xem logs để debug
 
 ```bash
-# Download dependencies
-go mod download
-go mod tidy
+make logs         # Tất cả logs
+make logs-dev     # Dev logs
+make ps           # Containers đang chạy
 ```

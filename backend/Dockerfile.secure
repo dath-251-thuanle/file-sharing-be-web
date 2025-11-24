@@ -41,6 +41,9 @@ COPY --from=builder /app/pkg/database /app/database
 # Runs as nonroot user (UID 65532) by default
 # No shell, no package manager = smaller attack surface
 
+# Set working directory
+WORKDIR /app
+
 EXPOSE 8080
 
 # Distroless doesn't have shell, so use ENTRYPOINT

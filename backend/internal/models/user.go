@@ -21,7 +21,7 @@ type User struct {
 	Role         UserRole  `gorm:"type:user_role;default:'user'" json:"role"`
 	PasswordHash string    `gorm:"type:varchar(255);not null" json:"-"`
 	TOTPSecret   *string   `gorm:"type:varchar(32)" json:"-"`
-	TOTPEnabled  bool      `gorm:"default:false" json:"totp_enabled"`
+	TOTPEnabled  *bool     `gorm:"default:false" json:"totp_enabled"`
 	CreatedAt    time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
 
 	// Relationships

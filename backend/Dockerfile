@@ -1,4 +1,3 @@
-
 FROM golang:1.25-bookworm AS builder
 
 # Install build dependencies
@@ -39,6 +38,8 @@ COPY --from=builder /app/pkg/database /app/database
 # Distroless runs as nonroot user by default (UID 65532)
 # No need to create user or change ownership
 
+# Set working directory
+WORKDIR /app
 # Expose port
 EXPOSE 8080
 
