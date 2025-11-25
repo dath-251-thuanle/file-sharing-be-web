@@ -22,9 +22,24 @@ type FileService struct {
 	storage storage.Storage
 }
 
-func NewFileService(db *gorm.DB, st storage.Storage) *FileService {}
+func NewFileService(db *gorm.DB, st storage.Storage) *FileService {
+	return &FileService{
+		db:      db,
+		storage: st,
+	}
+}
 
-type UploadInput struct {}
+type UploadInput struct {
+	FileName      string
+	ContentType   string
+	Size          int64
+	Reader        io.Reader
+	IsPublic      *bool
+	OwnerID       *uuid.UUID
+	PasswordHash  *string
+	AvailableFrom *time.Time
+	AvailableTo   *time.Time
+}
 
 func (in *UploadInput) container() storage.ContainerType {}
 
