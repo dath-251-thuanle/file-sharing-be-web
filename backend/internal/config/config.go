@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/spf13/viper"
@@ -71,11 +73,11 @@ type CloudStorageConfig struct {
 	Enabled          bool   `mapstructure:"enabled"`
 	Provider         string `mapstructure:"provider"` // e.g. "azure"
 	Endpoint         string `mapstructure:"endpoint"`
-	AccessKey        string `mapstructure:"access_key"`          // Azure: Storage Account Name
-	SecretKey        string `mapstructure:"secret_key"`          // Azure: Storage Account Key / SAS
-	PublicContainer  string `mapstructure:"public_container"`    // Azure: public container name
-	PrivateContainer string `mapstructure:"private_container"`   // Azure: private container name
-	Region           string `mapstructure:"region"`              // Azure: optional, keep for consistency
+	AccessKey        string `mapstructure:"access_key"`        // Azure: Storage Account Name
+	SecretKey        string `mapstructure:"secret_key"`        // Azure: Storage Account Key / SAS
+	PublicContainer  string `mapstructure:"public_container"`  // Azure: public container name
+	PrivateContainer string `mapstructure:"private_container"` // Azure: private container name
+	Region           string `mapstructure:"region"`            // Azure: optional, keep for consistency
 }
 
 type SystemPolicyConfig struct {
@@ -168,13 +170,30 @@ func Load() (*Config, error) {
 	if dbHost := os.Getenv("DB_HOST"); dbHost != "" {
 		cfg.Database.Host = dbHost
 	}
+	if dbPort := os.Getenv("DB_PORT"); dbPort != "" {
+		if port, err := strconv.Atoi(dbPort); err == nil {
+			cfg.Database.Port = port
+		}
+	}
+	if dbUser := os.Getenv("DB_USER"); dbUser != "" {
+		cfg.Database.User = dbUser
+	}
 	if dbPass := os.Getenv("DB_PASSWORD"); dbPass != "" {
 		cfg.Database.Password = dbPass
+	}
+	if dbName := os.Getenv("DB_NAME"); dbName != "" {
+		cfg.Database.Name = dbName
+	}
+	if dbSSLMode := os.Getenv("DB_SSLMODE"); dbSSLMode != "" {
+		cfg.Database.SSLMode = dbSSLMode
+	}
+	if dbTZ := os.Getenv("DB_TIMEZONE"); dbTZ != "" {
+		cfg.Database.Timezone = dbTZ
 	}
 	if jwtSecret := os.Getenv("JWT_SECRET"); jwtSecret != "" {
 		cfg.JWT.Secret = jwtSecret
 	}
-	
+
 	// Override cloud storage settings from environment
 	if enabled := os.Getenv("CLOUD_STORAGE_ENABLED"); enabled != "" {
 		cfg.CloudStorage.Enabled = enabled == "true"
@@ -206,6 +225,24 @@ func (c *DatabaseConfig) GetDSN() string {
 	return fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
 		c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode, c.Timezone,
+	)
+}
+
+// GetURL returns PostgreSQL URL connection string (for migrations)
+func (c *DatabaseConfig) GetURL() string {
+	params := url.Values{}
+	if c.SSLMode != "" {
+		params.Set("sslmode", c.SSLMode)
+	}
+	if c.Timezone != "" {
+		params.Set("timezone", c.Timezone)
+	}
+
+	user := url.QueryEscape(c.User)
+	password := url.QueryEscape(c.Password)
+	return fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/%s?%s",
+		user, password, c.Host, c.Port, c.Name, params.Encode(),
 	)
 }
 

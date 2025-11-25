@@ -6,12 +6,18 @@ Backend API cho hệ thống chia sẻ file tạm thời, được xây dựng b
 
 ```bash
 cd backend
-cp .env.example .env    # Tạo file .env
-make build              # Build Docker images
-make dev                # Chạy development (port 8082)
+cp .env.example .env    # Tạo file .env từ template
+
+# Development (hot reload, profile dev)
+docker compose --profile dev up app-dev
+# API: http://localhost:8082
+
+# Production-like stack (migrate + app + nginx)
+docker compose up -d
+# API: http://localhost:8080
 ```
 
-Chi tiết đầy đủ xem tại [`backend/SETUP_WITH_DOCKER.md`](./backend/SETUP_WITH_DOCKER.md)
+Tài liệu vận hành chi tiết xem tại [`backend/SETUP_WITH_DOCKER.md`](./backend/SETUP_WITH_DOCKER.md)
 
 ## Danh Sách Thành Viên
 
@@ -48,7 +54,15 @@ Chi tiết đầy đủ xem tại [`backend/SETUP_WITH_DOCKER.md`](./backend/SET
 
 Xem hướng dẫn chi tiết tại [`backend/SETUP_WITH_DOCKER.md`](./backend/SETUP_WITH_DOCKER.md)
 
-## 📚 API Documentation
+## 📚 Documentation & Reports
+
+- Toàn bộ source code, tài liệu kỹ thuật và báo cáo cần được cập nhật trong repo này.
+- Thư mục `docs/` chứa API spec (OpenAPI, Swagger), báo cáo kỹ thuật phụ trợ, biểu đồ…  
+  Ghi chú chi tiết từng file/danh mục nên được duy trì trong chính thư mục này.
+- Thư mục `reports/` (nếu có) dùng cho báo cáo cuối kỳ/slide. Nếu chưa tồn tại hãy tạo và commit cùng README mô tả nội dung.
+- Khi bổ sung tài liệu mới hãy update cả README này hoặc file hướng dẫn phù hợp để người khác dễ tìm.
+
+### API Specs
 
 ### API Specs
 
@@ -72,24 +86,16 @@ swag init -g cmd/server/main.go -o docs/swagger
 ## 🔧 Make Commands
 
 ```bash
-# Main Commands
-make build            # Build Docker images
-make dev              # Start development (port 8082)
-make app              # Start production (port 8080)
-make down             # Stop all services
-make restart          # Restart dev environment
+# Compose-based workflow (khuyến nghị)
+docker compose --profile dev up app-dev        # Dev (hot reload)
+docker compose up -d                           # Prod stack (migrate + app + nginx)
+docker compose down                            # Stop tất cả
+docker compose logs -f app-dev                 # Xem log dev
+docker compose run --rm migrate                # Chạy migrations thủ công (nếu cần)
 
-# Logs
-make logs             # View all logs
-make logs-dev         # View dev logs
-make logs-app         # View app logs
-
-# Database
-make db-reset         # Reset database
-make db-shell         # Open PostgreSQL shell
-
-# Cleanup
-make clean            # Remove all containers & volumes
+# Makefile vẫn còn nhưng ưu tiên Compose để đồng nhất quy trình
+make build
+make clean
 ```
 
 ## 📁 Cấu trúc thư mục
