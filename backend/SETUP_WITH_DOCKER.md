@@ -13,77 +13,64 @@ Hướng dẫn cài đặt và chạy File Sharing API
 
 ## ⚡ Quick Start
 
-### 1. Clone & Setup
+### 1. Chuẩn bị môi trường
 
 ```bash
 cd backend
-
-# Tạo file .env (nếu chưa có)
-cp .env.example .env
-
-# Chỉnh sửa .env nếu cần (điền Azure credentials, JWT secret, etc.)
+cp .env.example .env           # Tạo file env
+# Chỉnh sửa .env: thông tin DB (Supabase/Aiven), JWT, Azure Blob, ...
 ```
 
-### 2. Build Docker Images
+### 2. Development workflow
 
 ```bash
-make build
+# Hot reload với Air, mount mã nguồn
+docker compose --profile dev up app-dev
+# API: http://localhost:8082
+
+# Nếu muốn dùng Postgres nội bộ:
+docker compose --profile "dev,local-db" up app-dev
 ```
 
-### 3. Chạy Development
+### 3. Production-like stack (đơn lệnh)
 
 ```bash
-# Chạy development (hot reload)
-make dev
+# Build & chạy migrations + app + nginx
+docker compose up -d
 
-# API sẽ chạy tại: http://localhost:8082
+# API reverse proxy: http://localhost:8080
+# Nginx map 80/443 -> app
 ```
 
-### 4. Hoặc chạy Production
-
-```bash
-# Chạy production app
-make app
-
-# API sẽ chạy tại: http://localhost:8080
-```
+Migrations được chạy tự động mỗi lần app khởi động (có thể tắt bằng `RUN_DB_MIGRATIONS=false` trong `.env` nếu cần).
 
 ---
 
 ## 🔧 Các lệnh thường dùng
 
 ```bash
-# Development
-make dev              # Chạy dev (port 8082)
-make app              # Chạy production (port 8080)
-make build            # Build Docker images
+# Compose
+docker compose --profile dev up app-dev
+docker compose up -d
+docker compose down
+docker compose logs -f app-dev
+docker compose run --rm migrate
 
-# Control
-make down             # Dừng tất cả services
-make restart          # Restart dev environment
-
-# Logs
-make logs             # Xem logs tất cả services
-make logs-dev         # Xem logs dev only
-make logs-app         # Xem logs production app only
-
-# Database
-make db-reset         # Reset database (xóa data + restart)
-make db-shell         # Mở PostgreSQL shell
-
-# Cleanup
-make clean            # Xóa tất cả (containers + volumes + data)
+# Makefile (tuỳ chọn)
+make build
+make clean
 ```
 
 ---
 
 ## 🎯 Port Mapping
 
-| Service | Port | URL |
-|---------|------|-----|
-| Development API | 8082 | http://localhost:8082 |
-| Production API | 8080 | http://localhost:8080 |
-| PostgreSQL | 5432 | localhost:5432 |
+| Service | Port | URL / Ghi chú |
+|---------|------|--------------|
+| Dev API (`app-dev`) | 8082 | http://localhost:8082 |
+| Prod API (`app` qua nginx) | 8080 | http://localhost:8080 |
+| Nginx HTTPS | 443 | Forward tới app |
+| Postgres local (opt) | 5432 | Khi bật profile `local-db` |
 
 ---
 
@@ -104,14 +91,13 @@ kill -9 <PID>
 ### Reset lại toàn bộ
 
 ```bash
-make clean    # Xóa tất cả
-make build    # Build lại
-make dev      # Chạy lại
+docker compose down -v
+docker compose up -d     # Hoặc profile dev
 ```
 
 ### Kiểm tra containers
 
 ```bash
-make ps       # Xem containers đang chạy
-make logs     # Xem logs
+docker compose ps
+docker compose logs -f app-dev
 ```
