@@ -3,6 +3,8 @@ package database
 import (
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/config"
@@ -15,6 +17,12 @@ var DB *gorm.DB
 
 // Connect kết nối đến PostgreSQL database
 func Connect(cfg *config.DatabaseConfig) error {
+	if shouldRunMigrations() {
+		if err := RunMigrations(cfg); err != nil {
+			return fmt.Errorf("database migration failed: %w", err)
+		}
+	}
+
 	dsn := cfg.GetDSN()
 
 	// Cấu hình logger cho GORM
@@ -54,6 +62,11 @@ func Connect(cfg *config.DatabaseConfig) error {
 	DB = db
 	log.Println("Database connected successfully")
 	return nil
+}
+
+func shouldRunMigrations() bool {
+	val := strings.ToLower(os.Getenv("RUN_DB_MIGRATIONS"))
+	return val == "true" || val == "1"
 }
 
 func Close() error {

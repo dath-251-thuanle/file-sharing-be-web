@@ -24,6 +24,8 @@ services:
     networks:
       - app-network
     restart: unless-stopped
+    profiles:
+      - local-db
 
   # Backend Application (Development)
   app-dev:
@@ -31,14 +33,19 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     container_name: file-sharing-app-dev
+    env_file:
+      - .env
     environment:
       - APP_ENV=development
       - APP_PORT=8080
-      - DB_HOST=postgres
-      - DB_PORT=5432
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_NAME=${DB_NAME}
+      - DB_NAME=${DB_NAME:-file_sharing_db}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+      - RUN_DB_MIGRATIONS=${RUN_DB_MIGRATIONS:-true}
+      - MIGRATIONS_PATH=${MIGRATIONS_PATH:-migrations}
       - JWT_SECRET=${JWT_SECRET:-dev_secret_key_minimum_32_characters_long}
       - STORAGE_PATH=/app/storage/uploads
       - CLOUD_STORAGE_ENABLED=${CLOUD_STORAGE_ENABLED:-true}
@@ -54,9 +61,6 @@ services:
       - .:/app
       - app_storage:/app/storage/uploads
       - go_modules:/go/pkg/mod
-    depends_on:
-      postgres:
-        condition: service_healthy
     networks:
       - app-network
     restart: unless-stopped
@@ -73,12 +77,14 @@ services:
       - .env
     environment:
       - APP_ENV=production
-      - DB_HOST=postgres
-      - DB_PORT=5432
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-postgres}
       - DB_NAME=${DB_NAME:-file_sharing_db}
-      - JWT_SECRET=${JWT_SECRET:-dev_secret_key_minimum_32_characters_long}
+      - RUN_DB_MIGRATIONS=${RUN_DB_MIGRATIONS:-true}
+      - MIGRATIONS_PATH=${MIGRATIONS_PATH:-migrations}
+      - JWT_SECRET=${JWT_SECRET}
       - CLOUD_STORAGE_ENABLED=true
       - CLOUD_STORAGE_PROVIDER=azure
       - CLOUD_STORAGE_ENDPOINT=${CLOUD_STORAGE_ENDPOINT}
@@ -90,9 +96,6 @@ services:
       - "${APP_PORT:-8080}:8080"
     volumes:
       - app_storage:/app/storage/uploads
-    depends_on:
-      postgres:
-        condition: service_healthy
     networks:
       - app-network
     restart: unless-stopped
@@ -130,11 +133,16 @@ services:
     container_name: file-sharing-migrate
     volumes:
       - ./migrations:/migrations
+    env_file:
+      - .env
     networks:
       - app-network
-    depends_on:
-      postgres:
-        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      migrate
+      -path /migrations
+      -database "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE:-disable}"
+      up
     profiles:
       - tools
 
