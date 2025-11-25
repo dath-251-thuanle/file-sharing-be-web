@@ -276,3 +276,20 @@ func (s *FileService) GetPendingFiles() ([]models.File, error) {
 
 	return files, nil
 }
+
+// func (s *FileService) Download(ctx context.Context, filePath *string, container storage.ContainerType) (*storage.DownloadResult, error) {
+// 	if filePath == nil || *filePath == "" {
+// 		return nil, fmt.Errorf("file service: file path is empty")
+// 	}
+
+// 	if s.storage == nil {
+// 		return nil, fmt.Errorf("file service: storage backend is not configured")
+// 	}
+
+// 	loc := &storage.Location{
+// 		Container: container,
+// 		Path:      *filePath,
+// 	}
+
+// 	return s.storage.Download(ctx, loc)
+// }
