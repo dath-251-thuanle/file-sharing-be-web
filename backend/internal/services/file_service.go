@@ -70,7 +70,12 @@ func optionalString(val string) *string {
 	return &v
 }
 
-func containerFromFile(file *models.File) storage.ContainerType {}
+func containerFromFile(file *models.File) storage.ContainerType {
+	if file != nil && file.IsPublic != nil && *file.IsPublic {
+		return storage.ContainerPublic
+	}
+	return storage.ContainerPrivate
+}
 
 func (s *FileService) GetByID(id uuid.UUID) (*models.File, error) {}
 
