@@ -77,11 +77,11 @@ services:
       - .env
     environment:
       - APP_ENV=production
-      - DB_HOST=${DB_HOST:-postgres}
-      - DB_PORT=${DB_PORT:-5432}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_NAME=${DB_NAME:-file_sharing_db}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
       - RUN_DB_MIGRATIONS=${RUN_DB_MIGRATIONS:-true}
       - MIGRATIONS_PATH=${MIGRATIONS_PATH:-migrations}
       - JWT_SECRET=${JWT_SECRET}
@@ -107,25 +107,6 @@ services:
       start_period: 40s
     profiles:
       - prod
-
-  # Redis (Optional - for caching)
-  redis:
-    image: redis:7-alpine
-    container_name: file-sharing-redis
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - app-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    profiles:
-      - cache
 
   # Database Migrations
   migrate:

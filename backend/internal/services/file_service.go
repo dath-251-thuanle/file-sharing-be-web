@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -67,6 +68,10 @@ func (s *FileService) UploadFile(ctx context.Context, input *UploadInput) (*mode
 	if s.storage == nil {
 		return nil, fmt.Errorf("file service: storage backend is not configured")
 	}
+	isPrivate := input.IsPublic != nil && !*input.IsPublic
+	if isPrivate && input.OwnerID == nil && input.PasswordHash == nil {
+		return nil, fmt.Errorf("anonymous private uploads must set a password")
+	}
 
 	fileName := input.sanitizedFileName()
 	storageName := fmt.Sprintf("%s-%s", uuid.NewString(), fileName)
@@ -83,17 +88,10 @@ func (s *FileService) UploadFile(ctx context.Context, input *UploadInput) (*mode
 		return nil, err
 	}
 
-	// Ensure at least one date is set (constraint requirement)
-	availableFrom := input.AvailableFrom
-	availableTo := input.AvailableTo
-	
-	if availableFrom == nil && availableTo == nil {
-		// Default: available from now, expire after 7 days
-		now := time.Now()
-		defaultDays := 7 // TODO: fetch from system_policy.default_validity_days
-		expiryTime := now.AddDate(0, 0, defaultDays)
-		availableFrom = &now
-		availableTo = &expiryTime
+	availableFrom, availableTo, err := s.resolveAvailability(ctx, input)
+	if err != nil {
+		_ = s.storage.Delete(ctx, loc)
+		return nil, err
 	}
 
 	file := &models.File{
@@ -108,14 +106,26 @@ func (s *FileService) UploadFile(ctx context.Context, input *UploadInput) (*mode
 		AvailableTo:   availableTo,
 	}
 
-	if err := s.db.WithContext(ctx).Create(file).Error; err != nil {
-		_ = s.storage.Delete(ctx, loc)
-		return nil, err
-	}
+	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(file).Error; err != nil {
+			return err
+		}
 
-	// Reload to get actual values from database (including defaults)
-	if err := s.db.WithContext(ctx).First(file, "id = ?", file.ID).Error; err != nil {
-		return nil, err
+		if isPrivate && input.OwnerID != nil {
+			sharedWith := &models.SharedWith{
+				FileID: file.ID,
+				UserID: *input.OwnerID,
+			}
+			if err := tx.Create(sharedWith).Error; err != nil {
+				return err
+			}
+		}
+
+		return tx.First(file, "id = ?", file.ID).Error
+	})
+	if txErr != nil {
+		_ = s.storage.Delete(ctx, loc)
+		return nil, txErr
 	}
 
 	return file, nil
@@ -134,6 +144,40 @@ func containerFromFile(file *models.File) storage.ContainerType {
 		return storage.ContainerPublic
 	}
 	return storage.ContainerPrivate
+}
+
+func (s *FileService) resolveAvailability(ctx context.Context, input *UploadInput) (*time.Time, *time.Time, error) {
+	if input.AvailableFrom != nil || input.AvailableTo != nil {
+		return input.AvailableFrom, input.AvailableTo, nil
+	}
+
+	days, err := s.defaultValidityDays(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if days <= 0 {
+		days = 7
+	}
+
+	now := time.Now()
+	expiryTime := now.AddDate(0, 0, days)
+
+	return &now, &expiryTime, nil
+}
+
+func (s *FileService) defaultValidityDays(ctx context.Context) (int, error) {
+	var policy models.SystemPolicy
+	if err := s.db.WithContext(ctx).First(&policy).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 7, nil
+		}
+		return 0, err
+	}
+
+	if policy.DefaultValidityDays <= 0 {
+		return 7, nil
+	}
+	return policy.DefaultValidityDays, nil
 }
 
 func (s *FileService) GetByID(id uuid.UUID) (*models.File, error) {
@@ -174,7 +218,6 @@ func (s *FileService) Delete(id uuid.UUID) error {
 			Container: containerFromFile(&file),
 			Path:      file.FilePath,
 		}
-		// Best-effort delete to avoid leaving orphaned blobs. Ignore errors and continue.
 		_ = s.storage.Delete(context.Background(), loc)
 	}
 
