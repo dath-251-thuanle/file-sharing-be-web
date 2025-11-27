@@ -124,3 +124,6 @@ coverage/
 *.local.*
 *.deb
 sops-*.check*
+
+# Frontend
+frontend/
