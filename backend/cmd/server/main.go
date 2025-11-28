@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/gin-gonic/gin"
-
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/admin"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/config"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/controllers"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/database"
@@ -46,7 +46,10 @@ func main() {
 
 	// Setup router
 	router := gin.Default()
+	router.Use(corsMiddleware())
 	routes.SetupRoutes(router, fileController)
+	
+	admin.Setup(router, database.GetDB(), store) // Pass the router and the DB instance directly to your single-file admin manager
 
 	addr := cfg.Server.Host + ":" + strconv.Itoa(cfg.Server.Port)
 	go func() {
@@ -91,4 +94,20 @@ func waitForShutdown() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 	log.Println("Shutting down server...")
+}
+
+
+
+func corsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, X-Cron-Secret")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	}
 }
