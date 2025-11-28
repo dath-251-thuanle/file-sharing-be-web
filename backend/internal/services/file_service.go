@@ -81,7 +81,9 @@ func (s *FileService) GetByID(id uuid.UUID) (*models.File, error) {}
 
 func (s *FileService) GetByShareToken(token string) (*models.File, error) {}
 
-func (s *FileService) Create(file *models.File) error {}
+func (s *FileService) Create(file *models.File) error {
+	return s.db.Create(file).Error
+}
 
 func (s *FileService) Update(file *models.File) error {}
 
