@@ -89,7 +89,23 @@ func (s *FileService) Update(file *models.File) error {
 	return s.db.Save(file).Error
 }
 
-func (s *FileService) Delete(id uuid.UUID) error {}
+func (s *FileService) Delete(id uuid.UUID) error {
+	var file models.File
+	if err := s.db.First(&file, "id = ?", id).Error; err != nil {
+		return err
+	}
+
+	if s.storage != nil && file.FilePath != "" {
+		loc := &storage.Location{
+			Container: containerFromFile(&file),
+			Path:      file.FilePath,
+		}
+		// Best-effort delete to avoid leaving orphaned blobs. Ignore errors and continue.
+		_ = s.storage.Delete(context.Background(), loc)
+	}
+
+	return s.db.Delete(&models.File{}, "id = ?", id).Error
+}
 
 func (s *FileService) GetByOwnerID(ownerID uuid.UUID, limit, offset int) ([]models.File, int64, error) {}
 
