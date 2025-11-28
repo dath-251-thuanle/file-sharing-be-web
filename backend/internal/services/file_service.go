@@ -85,7 +85,9 @@ func (s *FileService) Create(file *models.File) error {
 	return s.db.Create(file).Error
 }
 
-func (s *FileService) Update(file *models.File) error {}
+func (s *FileService) Update(file *models.File) error {
+	return s.db.Save(file).Error
+}
 
 func (s *FileService) Delete(id uuid.UUID) error {}
 
