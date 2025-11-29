@@ -21,7 +21,6 @@ type Config struct {
 	RateLimit    RateLimitConfig    `mapstructure:"rate_limit"`
 	Logging      LoggingConfig      `mapstructure:"logging"`
 	Cleanup      CleanupConfig      `mapstructure:"cleanup"`
-	Redis        RedisConfig        `mapstructure:"redis"`
 	Email        EmailConfig        `mapstructure:"email"`
 	CloudStorage CloudStorageConfig `mapstructure:"cloud_storage"`
 	Metrics      MetricsConfig      `mapstructure:"metrics"`
@@ -110,14 +109,6 @@ type LoggingConfig struct {
 type CleanupConfig struct {
 	Cron   string `mapstructure:"cron"`
 	Secret string `mapstructure:"secret"`
-}
-
-type RedisConfig struct {
-	Enabled  bool   `mapstructure:"enabled"`
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
 }
 
 type EmailConfig struct {
