@@ -69,8 +69,9 @@ func (s *FileService) UploadFile(ctx context.Context, input *UploadInput) (*mode
 		return nil, fmt.Errorf("file service: storage backend is not configured")
 	}
 	isPrivate := input.IsPublic != nil && !*input.IsPublic
-	if isPrivate && input.OwnerID == nil && input.PasswordHash == nil {
-		return nil, fmt.Errorf("anonymous private uploads must set a password")
+	// Anonymous users cannot upload private files
+	if isPrivate && input.OwnerID == nil {
+		return nil, fmt.Errorf("anonymous private uploads require authentication")
 	}
 
 	fileName := input.sanitizedFileName()
@@ -191,7 +192,7 @@ func (s *FileService) GetByID(id uuid.UUID) (*models.File, error) {
 
 func (s *FileService) GetByShareToken(token string) (*models.File, error) {
 	var file models.File
-	err := s.db.Preload("Owner").Preload("Statistics").
+	err := s.db.Preload("Owner").Preload("Statistics").Preload("SharedWith.User").
 		Where("share_token = ?", token).First(&file).Error
 	if err != nil {
 		return nil, err

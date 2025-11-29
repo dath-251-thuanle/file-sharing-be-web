@@ -53,7 +53,7 @@ func main() {
 
 	addr := cfg.Server.Host + ":" + strconv.Itoa(cfg.Server.Port)
 	go func() {
-		log.Printf("🚀 Server running on %s (storage=%T)", addr, store)
+		log.Printf("Server running on %s (storage=%T)", addr, store)
 		if err := router.Run(addr); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("failed to run server: %v", err)
 		}

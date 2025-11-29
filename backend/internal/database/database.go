@@ -3,8 +3,6 @@ package database
 import (
 	"fmt"
 	"log"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/config"
@@ -15,20 +13,11 @@ import (
 
 var DB *gorm.DB
 
-// Connect kết nối đến PostgreSQL database
 func Connect(cfg *config.DatabaseConfig) error {
-	if shouldRunMigrations() {
-		if err := RunMigrations(cfg); err != nil {
-			return fmt.Errorf("database migration failed: %w", err)
-		}
-	}
-
 	dsn := cfg.GetDSN()
 
-	// Cấu hình logger cho GORM
 	gormLogger := logger.Default.LogMode(logger.Info)
 
-	// Kết nối database
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: gormLogger,
 		NowFunc: func() time.Time {
@@ -39,13 +28,11 @@ func Connect(cfg *config.DatabaseConfig) error {
 		return fmt.Errorf("failed to connect database: %w", err)
 	}
 
-	// Lấy underlying SQL database
 	sqlDB, err := db.DB()
 	if err != nil {
 		return fmt.Errorf("failed to get database instance: %w", err)
 	}
 
-	// Cấu hình connection pool
 	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 
@@ -64,11 +51,6 @@ func Connect(cfg *config.DatabaseConfig) error {
 	return nil
 }
 
-func shouldRunMigrations() bool {
-	val := strings.ToLower(os.Getenv("RUN_DB_MIGRATIONS"))
-	return val == "true" || val == "1"
-}
-
 func Close() error {
 	if DB != nil {
 		sqlDB, err := DB.DB()
@@ -80,7 +62,6 @@ func Close() error {
 	return nil
 }
 
-// GetDB returns the database instance
 func GetDB() *gorm.DB {
 	return DB
 }

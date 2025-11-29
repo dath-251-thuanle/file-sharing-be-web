@@ -24,8 +24,6 @@ services:
     networks:
       - app-network
     restart: unless-stopped
-    profiles:
-      - local-db
 
   # Backend Application (Development)
   app-dev:
@@ -63,6 +61,11 @@ services:
       - go_modules:/go/pkg/mod
     networks:
       - app-network
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     profiles:
       - dev
@@ -77,11 +80,12 @@ services:
       - .env
     environment:
       - APP_ENV=production
-      - DB_HOST=${DB_HOST}
-      - DB_PORT=${DB_PORT}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-file_sharing_db}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
       - RUN_DB_MIGRATIONS=${RUN_DB_MIGRATIONS:-true}
       - MIGRATIONS_PATH=${MIGRATIONS_PATH:-migrations}
       - JWT_SECRET=${JWT_SECRET}
@@ -98,6 +102,11 @@ services:
       - app_storage:/app/storage/uploads
     networks:
       - app-network
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
@@ -105,8 +114,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    profiles:
-      - prod
 
   # Database Migrations
   migrate:
@@ -116,16 +123,31 @@ services:
       - ./migrations:/migrations
     env_file:
       - .env
+    environment:
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-file_sharing_db}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
     networks:
       - app-network
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      migrate
-      -path /migrations
-      -database "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE:-disable}"
-      up
-    profiles:
-      - tools
+      set -e
+      echo "Running migrations with database: $${DB_HOST}:$${DB_PORT}/$${DB_NAME}"
+      echo "Waiting for database connection..."
+      for i in 1 2 3 4 5 6 7 8 9 10; do
+        if migrate -path /migrations -database "postgres://$${DB_USER}:$${DB_PASSWORD}@$${DB_HOST}:$${DB_PORT}/$${DB_NAME}?sslmode=$${DB_SSLMODE}" version > /dev/null 2>&1; then
+          echo "Database is ready!"
+          break
+        fi
+        echo "Attempt $${i}/10: Database not ready, waiting 2 seconds..."
+        sleep 2
+      done
+      echo "Running migrations..."
+      migrate -path /migrations -database "postgres://$${DB_USER}:$${DB_PASSWORD}@$${DB_HOST}:$${DB_PORT}/$${DB_NAME}?sslmode=$${DB_SSLMODE}" up
+    restart: "no"
 
   # Adminer (Database management UI)
   adminer:
@@ -163,8 +185,6 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
-  redis_data:
     driver: local
   app_storage:
     driver: local
