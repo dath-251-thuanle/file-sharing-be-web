@@ -22,12 +22,14 @@ import (
 )
 
 type FileController struct {
-	fileService *services.FileService
+	fileService  *services.FileService
+	statsService *services.StatisticsService
 }
 
-func NewFileController(fileService *services.FileService) *FileController {
+func NewFileController(fileService *services.FileService, statsService *services.StatisticsService) *FileController {
 	return &FileController{
-		fileService: fileService,
+		fileService:  fileService,
+		statsService: statsService,
 	}
 }
 
@@ -60,7 +62,7 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 	// Parse form fields
 	isPublicStr := c.PostForm("isPublic")
 	var isPublic bool = true
-	
+
 	if isPublicStr != "" {
 		isPublicStrLower := strings.ToLower(strings.TrimSpace(isPublicStr))
 		isPublic = (isPublicStrLower == "true" || isPublicStrLower == "1" || isPublicStrLower == "yes")
@@ -266,7 +268,6 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 		return
 	}
 
-
 	// Security check 1: File status (expired/pending)
 	// Owner can bypass pending status for preview
 	isOwner := currentUserID != nil && file.OwnerID != nil && *currentUserID == *file.OwnerID
@@ -287,8 +288,8 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 			hoursUntilAvailable = time.Until(*file.AvailableFrom).Hours()
 		}
 		c.JSON(http.StatusLocked, gin.H{
-			"error":                "File not yet available",
-			"availableFrom":        file.AvailableFrom,
+			"error":               "File not yet available",
+			"availableFrom":       file.AvailableFrom,
 			"hoursUntilAvailable": hoursUntilAvailable,
 		})
 		return
@@ -370,6 +371,93 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 	io.Copy(c.Writer, downloadResult.Reader)
 }
 
+func (fc *FileController) GetFileStats(c *gin.Context) {
+	// CHECK 401: Kiểm tra đăng nhập
+	currentUserID := getUserIDFromContext(c)
+	if currentUserID == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Unauthorized",
+			"message": "Invalid or missing authentication token",
+		})
+		return
+	}
+
+	// CHECK 400: Validate Input ---
+	idStr := c.Param("id")
+	fileID, err := uuid.Parse(idStr)
+	if err != nil {
+		// Nếu idStr rỗng (do lệch router) hoặc sai format
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Validation error",
+			"message": "Invalid file ID format (Must be UUID)",
+		})
+		return
+	}
+
+	// CHECK 404: Tìm file
+	file, err := fc.fileService.GetByID(fileID)
+	if err != nil || file.OwnerID == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Not found",
+			"message": "File not found or statistics not available (anonymous upload)",
+		})
+		return
+	}
+
+	// CHECK 403: Kiểm tra chính chủ
+	currentUserRole := getUserRoleFromContext(c)
+	isOwner := *currentUserID == *file.OwnerID
+	isAdmin := currentUserRole == models.RoleAdmin
+	if !isOwner && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "Forbidden",
+			"message": "You don't have permission to view statistics for this file",
+		})
+		return
+	}
+
+	// Lấy dữ liệu & Trả về
+	stats, err := fc.statsService.GetByFileID(fileID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Not found",
+			"message": "Statistics data not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"fileId":   file.ID,
+		"fileName": file.FileName,
+		"statistics": gin.H{
+			"downloadCount":     stats.DownloadCount,
+			"uniqueDownloaders": stats.UniqueDownloaders,
+			"lastDownloadedAt":  stats.LastDownloadedAt,
+			"createdAt":         stats.CreatedAt,
+		},
+	})
+}
+
+func getUserRoleFromContext(c *gin.Context) models.UserRole {
+	roleVal, exists := c.Get("userRole")
+	if !exists {
+		return models.RoleUser // Default
+	}
+
+	role, ok := roleVal.(models.UserRole)
+	if !ok {
+		// Try string conversion
+		if roleStr, ok := roleVal.(string); ok {
+			if roleStr == "admin" {
+				return models.RoleAdmin
+			}
+		}
+		return models.RoleUser
+	}
+
+	return role
+}
+
 func containerFromFile(file *models.File) storage.ContainerType {
 	if file != nil && file.IsPublic != nil && *file.IsPublic {
 		return storage.ContainerPublic
@@ -446,18 +534,18 @@ func detectContentType(ext string) string {
 	// Common MIME types mapping
 	mimeTypes := map[string]string{
 		// Microsoft Office (legacy)
-		".doc":  "application/msword",
-		".xls":  "application/vnd.ms-excel",
-		".ppt":  "application/vnd.ms-powerpoint",
-		
+		".doc": "application/msword",
+		".xls": "application/vnd.ms-excel",
+		".ppt": "application/vnd.ms-powerpoint",
+
 		// Microsoft Office (modern - Office Open XML)
 		".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 		".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 		".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-		
+
 		// PDF
 		".pdf": "application/pdf",
-		
+
 		// Images
 		".jpg":  "image/jpeg",
 		".jpeg": "image/jpeg",
@@ -466,7 +554,7 @@ func detectContentType(ext string) string {
 		".bmp":  "image/bmp",
 		".webp": "image/webp",
 		".svg":  "image/svg+xml",
-		
+
 		// Text
 		".txt":  "text/plain",
 		".csv":  "text/csv",
@@ -475,20 +563,20 @@ func detectContentType(ext string) string {
 		".js":   "application/javascript",
 		".json": "application/json",
 		".xml":  "application/xml",
-		
+
 		// Archives
 		".zip": "application/zip",
 		".rar": "application/x-rar-compressed",
 		".7z":  "application/x-7z-compressed",
 		".tar": "application/x-tar",
 		".gz":  "application/gzip",
-		
+
 		// Audio
-		".mp3":  "audio/mpeg",
-		".wav":  "audio/wav",
-		".ogg":  "audio/ogg",
-		".m4a":  "audio/mp4",
-		
+		".mp3": "audio/mpeg",
+		".wav": "audio/wav",
+		".ogg": "audio/ogg",
+		".m4a": "audio/mp4",
+
 		// Video
 		".mp4":  "video/mp4",
 		".avi":  "video/x-msvideo",
@@ -497,17 +585,16 @@ func detectContentType(ext string) string {
 		".flv":  "video/x-flv",
 		".webm": "video/webm",
 	}
-	
+
 	if mimeType, ok := mimeTypes[ext]; ok {
 		return mimeType
 	}
-	
+
 	// Fallback to Go's built-in mime detection
 	if detectedType := mime.TypeByExtension(ext); detectedType != "" {
 		return detectedType
 	}
-	
+
 	// Default fallback
 	return "application/octet-stream"
 }
-
