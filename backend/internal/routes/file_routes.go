@@ -14,6 +14,8 @@ func RegisterFileRoutes(router *gin.Engine, fileController *controllers.FileCont
 
 		// GET /files/:shareToken/download - Download a file by share token
 		files.GET("/:shareToken/download", fileController.DownloadFile)
+
+		// GET /files/:id/stats - Get file statistics by file ID
+		files.GET("/:id/stats", fileController.GetFileStats)
 	}
 }
-
