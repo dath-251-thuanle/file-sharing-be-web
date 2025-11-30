@@ -77,7 +77,14 @@ func containerFromFile(file *models.File) storage.ContainerType {
 	return storage.ContainerPrivate
 }
 
-func (s *FileService) GetByID(id uuid.UUID) (*models.File, error) {}
+func (s *FileService) GetByID(id uuid.UUID) (*models.File, error) {
+	var file models.File
+	err := s.db.Preload("Owner").Preload("Statistics").First(&file, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
 
 func (s *FileService) GetByShareToken(token string) (*models.File, error) {}
 
