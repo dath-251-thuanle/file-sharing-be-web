@@ -114,7 +114,28 @@ func (s *FileService) Delete(id uuid.UUID) error {
 	return s.db.Delete(&models.File{}, "id = ?", id).Error
 }
 
-func (s *FileService) GetByOwnerID(ownerID uuid.UUID, limit, offset int) ([]models.File, int64, error) {}
+func (s *FileService) GetByOwnerID(ownerID uuid.UUID, limit, offset int) ([]models.File, int64, error) {
+	var files []models.File
+	var total int64
+
+	query := s.db.Model(&models.File{}).Where("owner_id = ?", ownerID)
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := query.Preload("Statistics").
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&files).Error
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return files, total, nil
+}
 
 func (s *FileService) GetPublicFiles(limit, offset int) ([]models.File, int64, error) {}
 
