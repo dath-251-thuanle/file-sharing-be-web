@@ -86,7 +86,15 @@ func (s *FileService) GetByID(id uuid.UUID) (*models.File, error) {
 	return &file, nil
 }
 
-func (s *FileService) GetByShareToken(token string) (*models.File, error) {}
+func (s *FileService) GetByShareToken(token string) (*models.File, error) {
+	var file models.File
+	err := s.db.Preload("Owner").Preload("Statistics").
+		Where("share_token = ?", token).First(&file).Error
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
 
 func (s *FileService) Create(file *models.File) error {
 	return s.db.Create(file).Error
@@ -137,12 +145,92 @@ func (s *FileService) GetByOwnerID(ownerID uuid.UUID, limit, offset int) ([]mode
 	return files, total, nil
 }
 
-func (s *FileService) GetPublicFiles(limit, offset int) ([]models.File, int64, error) {}
+func (s *FileService) GetPublicFiles(limit, offset int) ([]models.File, int64, error) {
+	var files []models.File
+	var total int64
 
-func (s *FileService) SearchFiles(query string, limit, offset int) ([]models.File, int64, error) {}
+	query := s.db.Model(&models.File{}).Where("is_public = ?", true)
 
-func (s *FileService) GetExpiredFiles() ([]models.File, error) {}
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
-func (s *FileService) GetPendingFiles() ([]models.File, error) {}
+	err := query.Preload("Owner").
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&files).Error
 
-func (s *FileService) Download(ctx context.Context, filePath *string, container storage.ContainerType) (*storage.DownloadResult, error) {}
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return files, total, nil
+}
+
+func (s *FileService) SearchFiles(query string, limit, offset int) ([]models.File, int64, error) {
+	var files []models.File
+	var total int64
+
+	searchQuery := s.db.Model(&models.File{}).
+		Where("file_name ILIKE ?", "%"+query+"%")
+
+	if err := searchQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := searchQuery.Preload("Owner").
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&files).Error
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return files, total, nil
+}
+
+func (s *FileService) GetExpiredFiles() ([]models.File, error) {
+	var files []models.File
+
+	err := s.db.Where("available_to IS NOT NULL AND available_to < CURRENT_TIMESTAMP").
+		Find(&files).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return files, nil
+}
+
+func (s *FileService) GetPendingFiles() ([]models.File, error) {
+	var files []models.File
+
+	err := s.db.Where("available_from IS NOT NULL AND available_from > CURRENT_TIMESTAMP").
+		Find(&files).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return files, nil
+}
+
+func (s *FileService) Download(ctx context.Context, filePath *string, container storage.ContainerType) (*storage.DownloadResult, error) {
+	if filePath == nil || *filePath == "" {
+		return nil, fmt.Errorf("file service: file path is empty")
+	}
+
+	if s.storage == nil {
+		return nil, fmt.Errorf("file service: storage backend is not configured")
+	}
+
+	loc := &storage.Location{
+		Container: container,
+		Path:      *filePath,
+	}
+
+	return s.storage.Download(ctx, loc)
+}
