@@ -8,9 +8,9 @@ import (
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/config"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/controllers"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/database"
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/middleware"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/repositories"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/services"
-	"github.com/dath-251-thuanle/file-sharing-be-web/internal/middleware"
 )
 
 func SetupRoutes(router *gin.Engine, fileController *controllers.FileController) {
@@ -36,9 +36,13 @@ func SetupRoutes(router *gin.Engine, fileController *controllers.FileController)
 		auth.POST("/register", authController.Register)
 		auth.POST("/login", authController.Login)
 		auth.GET("/profile", middleware.JWTAuthMiddleware(cfg), authController.GetProfile) // Route lấy thông tin profile
-		auth.POST("/logout", authController.Logout) // Route đăng xuất
+		auth.POST("/logout", authController.Logout) // Logout
 	}
 
 	// Đăng ký các route file
-	RegisterFileRoutes(router, fileController)
+	files := router.Group("/api/files")
+	files.Use(middleware.JWTAuthMiddleware(cfg))
+	{
+		RegisterFileRoutes(files, fileController, cfg)
+	}
 }
