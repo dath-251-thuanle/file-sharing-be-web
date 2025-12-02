@@ -242,17 +242,83 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 	c.JSON(http.StatusCreated, response)
 }
 
+// GetFileInfo returns file metadata without downloading
+// GET /files/:shareToken
+func (fc *FileController) GetFileInfo(c *gin.Context) {
+	shareToken := c.Param("shareToken")
+
+	// Get file metadata from database
+	file, err := fc.fileService.GetByShareToken(shareToken)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":   "Not found",
+				"message": "File not found",
+			})
+			return
+		}
+		return
+	}
+
+	// Check file status
+	status := file.GetStatus()
+	if status == "expired" {
+		c.JSON(http.StatusGone, gin.H{
+			"error":   "File expired",
+			"message": "File has expired",
+		})
+		return
+	}
+
+	// Build response with safe metadata (no sensitive info like password hash)
+	response := gin.H{
+		"file": gin.H{
+			"id":         file.ID,
+			"fileName":   file.FileName,
+			"fileSize":   file.FileSize,
+			"mimeType":   file.MimeType,
+			"shareToken": file.ShareToken,
+			"isPublic":   file.IsPublic,
+			"status":     status,
+			"createdAt":  file.CreatedAt,
+		},
+	}
+
+	// Add availability info if present
+	if file.AvailableFrom != nil {
+		response["file"].(gin.H)["availableFrom"] = file.AvailableFrom
+	}
+	if file.AvailableTo != nil {
+		response["file"].(gin.H)["availableTo"] = file.AvailableTo
+		
+		// Calculate hours remaining if active
+		if status == "active" {
+			hoursRemaining := time.Until(*file.AvailableTo).Hours()
+			if hoursRemaining > 0 {
+				response["file"].(gin.H)["hoursRemaining"] = hoursRemaining
+			}
+		}
+	}
+
+	// Add password protection indicator (don't expose actual hash)
+	hasPassword := file.PasswordHash != nil && *file.PasswordHash != ""
+	response["file"].(gin.H)["hasPassword"] = hasPassword
+
+	// Add owner info if present (basic info only)
+	if file.Owner != nil {
+		response["file"].(gin.H)["owner"] = gin.H{
+			"id":       file.Owner.ID,
+			"username": file.Owner.Username,
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 // DownloadFile handles file download by share token
 // GET /files/:shareToken/download
 func (fc *FileController) DownloadFile(c *gin.Context) {
 	shareToken := c.Param("shareToken")
-	if shareToken == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Validation error",
-			"message": "Share token is required",
-		})
-		return
-	}
 
 	// Get current user (optional - for authenticated downloads)
 	currentUserID := getUserIDFromContext(c)
@@ -268,10 +334,6 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Internal server error",
-			"message": "Failed to retrieve file",
-		})
 		return
 	}
 
