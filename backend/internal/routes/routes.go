@@ -30,12 +30,16 @@ func SetupRoutes(router *gin.Engine, fileController *controllers.FileController)
 	userService := services.NewUserService(userRepo, cfg)
 	authController := controllers.NewAuthController(userService)
 
+	// Đăng ký group route cho auth
 	auth := router.Group("/api/auth")
 	{
 		auth.POST("/register", authController.Register)
 		auth.POST("/login", authController.Login)
+		auth.GET("/profile", middleware.JWTAuthMiddleware(cfg), authController.GetProfile) // Route lấy thông tin profile
+		auth.POST("/logout", authController.Logout) // Logout
 	}
 
+	// Đăng ký các route file
 	files := router.Group("/api/files")
 	files.Use(middleware.JWTAuthMiddleware(cfg))
 	{

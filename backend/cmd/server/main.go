@@ -15,6 +15,7 @@ import (
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/routes"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/services"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/storage"
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -50,6 +51,12 @@ func main() {
 	router := gin.Default()
 	router.Use(corsMiddleware())
 	routes.SetupRoutes(router, fileController)
+
+	// Use JWT middleware for protected routes
+	auth := router.Group("/api/auth")
+	auth.Use(middleware.JWTAuthMiddleware(cfg))
+
+	router.Run(":8080")
 
 	admin.Setup(router, database.GetDB(), store) // Pass the router and the DB instance directly to your single-file admin manager
 
