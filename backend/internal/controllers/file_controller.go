@@ -242,8 +242,9 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 	c.JSON(http.StatusCreated, response)
 }
 
-// GetFileInfo returns file metadata without downloading
+// GetFileInfo returns basic file metadata without downloading (public endpoint)
 // GET /files/:shareToken
+// Only returns minimal information: id, fileName, shareToken, status, isPublic, hasPassword
 func (fc *FileController) GetFileInfo(c *gin.Context) {
 	shareToken := c.Param("shareToken")
 
@@ -270,51 +271,21 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 		return
 	}
 
-	// Build response with safe metadata (no sensitive info like password hash)
+	// Check if password hash exists and is not empty
+	hasPassword := file.PasswordHash != nil && 
+		*file.PasswordHash != "" && 
+		len(*file.PasswordHash) >= 60 && 
+		strings.HasPrefix(*file.PasswordHash, "$2")
+
 	response := gin.H{
 		"file": gin.H{
 			"id":         file.ID,
 			"fileName":   file.FileName,
-			"fileSize":   file.FileSize,
-			"mimeType":   file.MimeType,
 			"shareToken": file.ShareToken,
-			"isPublic":   file.IsPublic,
 			"status":     status,
-			"createdAt":  file.CreatedAt,
+			"isPublic":   file.IsPublic,
+			"hasPassword": hasPassword,
 		},
-	}
-
-	// Add availability info if present
-	if file.AvailableFrom != nil {
-		response["file"].(gin.H)["availableFrom"] = file.AvailableFrom
-	}
-	if file.AvailableTo != nil {
-		response["file"].(gin.H)["availableTo"] = file.AvailableTo
-		
-		// Calculate hours remaining if active
-		if status == "active" {
-			hoursRemaining := time.Until(*file.AvailableTo).Hours()
-			if hoursRemaining > 0 {
-				response["file"].(gin.H)["hoursRemaining"] = hoursRemaining
-			}
-		}
-	}
-
-	// Add password protection indicator (don't expose actual hash)
-	// Check if password hash exists and is not empty (handle both nil and empty string cases)
-	hasPassword := false
-	if file.PasswordHash != nil {
-		trimmed := strings.TrimSpace(*file.PasswordHash)
-		hasPassword = trimmed != ""
-	}
-	response["file"].(gin.H)["hasPassword"] = hasPassword
-
-	// Add owner info if present (basic info only)
-	if file.Owner != nil {
-		response["file"].(gin.H)["owner"] = gin.H{
-			"id":       file.Owner.ID,
-			"username": file.Owner.Username,
-		}
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -439,6 +410,84 @@ func (fc *FileController) GetFileByID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// DeleteFile deletes a file by UUID (owner/admin only)
+// DELETE /files/info/:id
+func (fc *FileController) DeleteFile(c *gin.Context) {
+	// CHECK 401: Kiểm tra đăng nhập
+	currentUserID := getUserIDFromContext(c)
+	if currentUserID == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Unauthorized",
+			"message": "Invalid or missing authentication token",
+		})
+		return
+	}
+
+	// CHECK 400: Validate Input - Must be UUID
+	idStr := c.Param("id")
+	fileID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Validation error",
+			"message": "Invalid file ID format (Must be UUID)",
+		})
+		return
+	}
+
+	// CHECK 404: Tìm file
+	file, err := fc.fileService.GetByID(fileID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":   "Not found",
+				"message": "File not found",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal server error",
+			"message": "Failed to retrieve file",
+		})
+		return
+	}
+
+	// CHECK 403: Kiểm tra quyền truy cập (chỉ owner hoặc admin)
+	// Anonymous uploads (OwnerID == nil) không thể xóa
+	if file.OwnerID == nil {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "Forbidden",
+			"message": "Anonymous uploads cannot be deleted",
+		})
+		return
+	}
+
+	currentUserRole := getUserRoleFromContext(c)
+	isOwner := *currentUserID == *file.OwnerID
+	isAdmin := currentUserRole == models.RoleAdmin
+	if !isOwner && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "Forbidden",
+			"message": "You don't have permission to delete this file",
+		})
+		return
+	}
+
+	// Delete file
+	err = fc.fileService.Delete(fileID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal server error",
+			"message": "Failed to delete file",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "File deleted successfully",
+		"fileId":  fileID,
+	})
 }
 
 // DownloadFile handles file download by share token

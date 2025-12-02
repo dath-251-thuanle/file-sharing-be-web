@@ -578,8 +578,6 @@ paths:
         - Trả về đầy đủ metadata bao gồm cả thông tin nhạy cảm (không public)
         
         **Use case:** Owner xem thông tin file của mình trong dashboard
-        
-        **Lưu ý:** Endpoint này sử dụng path `/files/info/{id}` thay vì `/files/{id}` để tránh conflict với route `/files/{shareToken}` trong Gin router.
       security:
         - BearerAuth: []
       parameters:
@@ -655,8 +653,13 @@ paths:
         - Files
       summary: Xóa file
       description: |
-        Xóa file (chỉ owner).
-        Anonymous upload KHÔNG THỂ xóa file sau khi upload.
+        Xóa file theo UUID (chỉ owner hoặc admin).
+        
+        **Quyền truy cập:**
+        - Chỉ owner của file hoặc admin mới có thể xóa
+        - Anonymous uploads (file không có owner) **KHÔNG THỂ** xóa file sau khi upload
+      security:
+        - BearerAuth: []
       parameters:
         - name: id
           in: path
@@ -665,6 +668,7 @@ paths:
           schema:
             type: string
             format: uuid
+            example: 550e8400-e29b-41d4-a716-446655440000
       responses:
         '200':
           description: Xóa thành công
@@ -675,21 +679,36 @@ paths:
                 properties:
                   message:
                     type: string
+                    example: File deleted successfully
                   fileId:
                     type: string
                     format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
               examples:
                 success:
                   summary: Xóa thành công
                   value:
                     message: File deleted successfully
                     fileId: 550e8400-e29b-41d4-a716-446655440000
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           description: Không phải owner hoặc anonymous upload
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              examples:
+                notOwner:
+                  summary: Không phải owner
+                  value:
+                    error: Forbidden
+                    message: You don't have permission to delete this file
+                anonymousUpload:
+                  summary: Anonymous upload không thể xóa
+                  value:
+                    error: Forbidden
+                    message: Anonymous uploads cannot be deleted
         '404':
           description: Không tìm thấy file với id
           content:
@@ -967,7 +986,11 @@ paths:
       tags:
         - Files
       summary: Lấy thông tin file
-      description: Lấy metadata của file qua share token
+      description: |
+        Lấy metadata cơ bản của file qua share token (public endpoint, không cần authentication).
+        
+        **Response chỉ trả về thông tin cơ bản:**
+        - `id`, `fileName`, `shareToken`, `status`, `isPublic`, `hasPassword`
       security: []
       parameters:
         - $ref: '#/components/parameters/ShareToken'
@@ -980,7 +1003,7 @@ paths:
                 $ref: '#/components/schemas/FileInfoResponse'
               examples:
                 success:
-                  summary: Trả về metadata
+                  summary: Trả về metadata cơ bản (public)
                   value:
                     file:
                       id: 550e8400-e29b-41d4-a716-446655440000
@@ -988,6 +1011,17 @@ paths:
                       shareToken: a1b2c3d4e5f6g7h8
                       status: active
                       isPublic: false
+                      hasPassword: true
+                noPassword:
+                  summary: File không có password
+                  value:
+                    file:
+                      id: 550e8400-e29b-41d4-a716-446655440001
+                      fileName: document.pdf
+                      shareToken: b2c3d4e5f6g7h8i9
+                      status: active
+                      isPublic: true
+                      hasPassword: false
         '404':
           description: Không tìm thấy file với shareToken
           content:
