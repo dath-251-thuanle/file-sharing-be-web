@@ -35,6 +35,7 @@ func getValidationMessage(err error) string {
 	return err.Error()
 }
 
+// Register xử lý logic đăng ký user mới
 func (ac *AuthController) Register(c *gin.Context) {
 	var input services.RegisterInput
 
@@ -68,6 +69,7 @@ func (ac *AuthController) Register(c *gin.Context) {
 	})
 }
 
+// Login xử lý logic đăng nhập và trả về JWT token
 func (ac *AuthController) Login(c *gin.Context) {
 	var input services.LoginInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -84,6 +86,31 @@ func (ac *AuthController) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":      "Login successful",
 		"access_token": token,
+		"user": gin.H{
+			"id":       user.ID,
+			"username": user.Username,
+			"email":    user.Email,
+			"role":     user.Role,
+		},
+	})
+}
+
+// Logout xử lý việc đăng xuất người dùng
+// Với JWT, việc đăng xuất chỉ đơn giản là client không gửi token nữa.
+func (ac *AuthController) Logout(c *gin.Context) {
+	// Để đăng xuất, bạn có thể xóa JWT token trên client (xóa cookie hoặc token lưu trong local storage)
+	// Không cần xử lý trong backend vì JWT là stateless.
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Logged out successfully",
+	})
+}
+
+// GetProfile trả về thông tin profile người dùng hiện tại (được xác thực qua JWT)
+func (ac *AuthController) GetProfile(c *gin.Context) {
+	// Lấy thông tin người dùng từ context (được lưu khi xác thực JWT)
+	user := c.MustGet("user").(*services.User) // Đây là thông tin người dùng đã được xác thực từ JWT middleware
+
+	c.JSON(http.StatusOK, gin.H{
 		"user": gin.H{
 			"id":       user.ID,
 			"username": user.Username,
