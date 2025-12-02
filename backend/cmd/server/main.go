@@ -40,9 +40,11 @@ func main() {
 
 	// Initialize services
 	fileService := services.NewFileService(database.GetDB(), store)
+	statsService := services.NewStatisticsService(database.GetDB())
+	historyService := services.NewDownloadHistoryService(database.GetDB())
 
 	// Initialize controllers
-	fileController := controllers.NewFileController(fileService)
+	fileController := controllers.NewFileController(fileService, statsService, historyService)
 
 	// Setup router
 	router := gin.Default()

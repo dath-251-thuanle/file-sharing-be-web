@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,12 +24,19 @@ import (
 )
 
 type FileController struct {
-	fileService *services.FileService
+	fileService    *services.FileService
+	statsService   *services.StatisticsService
+	historyService *services.DownloadHistoryService
 }
 
-func NewFileController(fileService *services.FileService) *FileController {
+func NewFileController(
+	fileService *services.FileService,
+	statsService *services.StatisticsService,
+	historyService *services.DownloadHistoryService) *FileController {
 	return &FileController{
-		fileService: fileService,
+		fileService:    fileService,
+		statsService:   statsService,
+		historyService: historyService,
 	}
 }
 
@@ -60,7 +69,7 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 	// Parse form fields
 	isPublicStr := c.PostForm("isPublic")
 	var isPublic bool = true
-	
+
 	if isPublicStr != "" {
 		isPublicStrLower := strings.ToLower(strings.TrimSpace(isPublicStr))
 		isPublic = (isPublicStrLower == "true" || isPublicStrLower == "1" || isPublicStrLower == "yes")
@@ -328,7 +337,6 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 		return
 	}
 
-
 	// Security check 1: File status (expired/pending)
 	// Owner can bypass pending status for preview
 	isOwner := currentUserID != nil && file.OwnerID != nil && *currentUserID == *file.OwnerID
@@ -349,8 +357,8 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 			hoursUntilAvailable = time.Until(*file.AvailableFrom).Hours()
 		}
 		c.JSON(http.StatusLocked, gin.H{
-			"error":                "File not yet available",
-			"availableFrom":        file.AvailableFrom,
+			"error":               "File not yet available",
+			"availableFrom":       file.AvailableFrom,
 			"hoursUntilAvailable": hoursUntilAvailable,
 		})
 		return
@@ -429,7 +437,45 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 
 	// Stream file to response
 	c.Status(http.StatusOK)
-	io.Copy(c.Writer, downloadResult.Reader)
+	bytesCopied, copyError := io.Copy(c.Writer, downloadResult.Reader)
+
+	isCompleted := copyError == nil && bytesCopied == downloadResult.Size
+
+	fileID := file.ID
+	userID := currentUserID
+
+	go func() {
+		// GHI LỊCH SỬ
+		err := fc.historyService.Create(&models.DownloadHistory{
+			FileID:            fileID,
+			DownloaderID:      userID, // nil nếu là khách
+			DownloadCompleted: &isCompleted,
+			DownloadedAt:      time.Now(),
+		})
+		if err != nil {
+			fmt.Printf("Failed to record history: %v\n", err)
+		}
+
+		if isCompleted {
+			_ = fc.statsService.IncrementDownloadCount(fileID)
+			_ = fc.statsService.UpdateLastDownloadedAt(fileID)
+
+			// XỬ LÝ UNIQUE DOWNLOADER
+			if userID != nil {
+				history, _ := fc.historyService.GetByFileIDAndDownloaderID(fileID, *userID)
+
+				successCount := 0
+				for _, h := range history {
+					if h.DownloadCompleted != nil && *h.DownloadCompleted {
+						successCount++
+					}
+				}
+				if successCount == 1 {
+					_ = fc.statsService.IncrementUniqueDownloaders(fileID)
+				}
+			}
+		}
+	}()
 }
 
 func containerFromFile(file *models.File) storage.ContainerType {
@@ -508,18 +554,18 @@ func detectContentType(ext string) string {
 	// Common MIME types mapping
 	mimeTypes := map[string]string{
 		// Microsoft Office (legacy)
-		".doc":  "application/msword",
-		".xls":  "application/vnd.ms-excel",
-		".ppt":  "application/vnd.ms-powerpoint",
-		
+		".doc": "application/msword",
+		".xls": "application/vnd.ms-excel",
+		".ppt": "application/vnd.ms-powerpoint",
+
 		// Microsoft Office (modern - Office Open XML)
 		".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 		".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 		".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-		
+
 		// PDF
 		".pdf": "application/pdf",
-		
+
 		// Images
 		".jpg":  "image/jpeg",
 		".jpeg": "image/jpeg",
@@ -528,7 +574,7 @@ func detectContentType(ext string) string {
 		".bmp":  "image/bmp",
 		".webp": "image/webp",
 		".svg":  "image/svg+xml",
-		
+
 		// Text
 		".txt":  "text/plain",
 		".csv":  "text/csv",
@@ -537,20 +583,20 @@ func detectContentType(ext string) string {
 		".js":   "application/javascript",
 		".json": "application/json",
 		".xml":  "application/xml",
-		
+
 		// Archives
 		".zip": "application/zip",
 		".rar": "application/x-rar-compressed",
 		".7z":  "application/x-7z-compressed",
 		".tar": "application/x-tar",
 		".gz":  "application/gzip",
-		
+
 		// Audio
-		".mp3":  "audio/mpeg",
-		".wav":  "audio/wav",
-		".ogg":  "audio/ogg",
-		".m4a":  "audio/mp4",
-		
+		".mp3": "audio/mpeg",
+		".wav": "audio/wav",
+		".ogg": "audio/ogg",
+		".m4a": "audio/mp4",
+
 		// Video
 		".mp4":  "video/mp4",
 		".avi":  "video/x-msvideo",
@@ -559,17 +605,216 @@ func detectContentType(ext string) string {
 		".flv":  "video/x-flv",
 		".webm": "video/webm",
 	}
-	
+
 	if mimeType, ok := mimeTypes[ext]; ok {
 		return mimeType
 	}
-	
+
 	// Fallback to Go's built-in mime detection
 	if detectedType := mime.TypeByExtension(ext); detectedType != "" {
 		return detectedType
 	}
-	
+
 	// Default fallback
 	return "application/octet-stream"
 }
 
+// GET /files/stats/:id
+func (fc *FileController) GetFileStats(c *gin.Context) {
+	//CHECK 401: Kiểm tra đăng nhập
+	currentUserID := getUserIDFromContext(c)
+	if currentUserID == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Unauthorized",
+			"message": "Invalid or missing authentication token",
+		})
+		return
+	}
+
+	// CHECK 400: Validate Input
+	idStr := c.Param("id")
+	fileID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Validation error",
+			"message": "Invalid file ID format (Must be UUID)",
+		})
+		return
+	}
+
+	// CHECK 404: Tìm file
+	file, err := fc.fileService.GetByID(fileID)
+	if err != nil || file.OwnerID == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Not found",
+			"message": "File not found or statistics not available (anonymous upload)",
+		})
+		return
+	}
+
+	//CHECK 403: Kiểm tra chính chủ
+	currentUserRole := getUserRoleFromContext(c)
+	isOwner := *currentUserID == *file.OwnerID
+	isAdmin := currentUserRole == models.RoleAdmin
+	if !isOwner && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "Forbidden",
+			"message": "You don't have permission to view statistics for this file",
+		})
+		return
+	}
+
+	stats, err := fc.statsService.GetByFileID(fileID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Not found",
+			"message": "Statistics data not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"fileId":   file.ID,
+		"fileName": file.FileName,
+		"statistics": gin.H{
+			"downloadCount":     stats.DownloadCount,
+			"uniqueDownloaders": stats.UniqueDownloaders,
+			"lastDownloadedAt":  stats.LastDownloadedAt,
+			"createdAt":         stats.CreatedAt,
+		},
+	})
+}
+
+func getUserRoleFromContext(c *gin.Context) models.UserRole {
+	roleVal, exists := c.Get("userRole")
+	if !exists {
+		return models.RoleUser // Default
+	}
+
+	role, ok := roleVal.(models.UserRole)
+	if !ok {
+		// Try string conversion
+		if roleStr, ok := roleVal.(string); ok {
+			if roleStr == "admin" {
+				return models.RoleAdmin
+			}
+		}
+		return models.RoleUser
+	}
+
+	return role
+}
+
+// GET /files/download-history/:id
+func (fc *FileController) GetDownloadHistory(c *gin.Context) {
+	//AUTH CHECK (401)
+	currentUserID := getUserIDFromContext(c)
+	if currentUserID == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Unauthorized",
+			"message": "Invalid or missing authentication token",
+		})
+		return
+	}
+
+	// VALIDATE ID (400)
+	idStr := c.Param("id")
+	fileID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Validation error",
+			"message": "Invalid file ID format",
+		})
+		return
+	}
+
+	// CHECK FILE (404)
+	file, err := fc.fileService.GetByID(fileID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Not found",
+			"message": "File not found",
+		})
+		return
+	}
+
+	// CHECK PERMISSION (403)
+	currentUserRole := getUserRoleFromContext(c)
+	isOwner := file.OwnerID != nil && *currentUserID == *file.OwnerID
+	isAdmin := currentUserRole == models.RoleAdmin
+
+	if !isOwner && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "Forbidden",
+			"message": "You don't have permission to view download history for this file",
+		})
+		return
+	}
+
+	// PAGINATION LOGIC
+	pageStr := c.DefaultQuery("page", "1")
+	page, _ := strconv.Atoi(pageStr)
+	if page < 1 {
+		page = 1
+	}
+
+	// Lấy limit (default 50, max 100 theo Swagger)
+	limitStr := c.DefaultQuery("limit", "50")
+	limit, _ := strconv.Atoi(limitStr)
+	if limit < 1 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	offset := (page - 1) * limit
+
+	// GỌI SERVICE
+	histories, totalRecords, err := fc.historyService.GetByFileID(fileID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal server error",
+			"message": "Failed to retrieve history",
+		})
+		return
+	}
+
+	// MAP RESPONSE (Biến đổi struct DB thành JSON Swagger)
+	var historyResponse []gin.H
+	for _, h := range histories {
+		// Xử lý object downloader (Null nếu là anonymous)
+		var downloaderInfo interface{} = nil
+		if h.Downloader != nil {
+			downloaderInfo = gin.H{
+				"username": h.Downloader.Username,
+				"email":    h.Downloader.Email,
+			}
+		}
+
+		historyResponse = append(historyResponse, gin.H{
+			"id":                h.ID,
+			"downloader":        downloaderInfo,
+			"downloadedAt":      h.DownloadedAt,
+			"downloadCompleted": h.DownloadCompleted,
+		})
+	}
+
+	// Tính tổng số trang
+	totalPages := int(math.Ceil(float64(totalRecords) / float64(limit)))
+	if totalPages == 0 {
+		totalPages = 1
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"fileId":   file.ID,
+		"fileName": file.FileName,
+		"history":  historyResponse,
+		"pagination": gin.H{
+			"currentPage":  page,
+			"totalPages":   totalPages,
+			"totalRecords": totalRecords,
+			"limit":        limit,
+		},
+	})
+}
