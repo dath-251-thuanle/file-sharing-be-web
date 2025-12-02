@@ -1,24 +1,121 @@
 package controllers
 
 import (
-	"github.com/gin-gonic/gin"
+	"fmt"
 	"net/http"
+
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/services"
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
-// AuthController - Controller cho các API liên quan đến Auth
-type AuthController struct {}
-
-// NewAuthController - Khởi tạo AuthController
-func NewAuthController() *AuthController {
-	return &AuthController{}
+type AuthController struct {
+	userService *services.UserService
 }
 
-// Logout - Đăng xuất người dùng
-// POST /auth/logout
-func (ac *AuthController) Logout(c *gin.Context) {
-	// Xóa JWT token khỏi client (ví dụ xóa cookie, hoặc thông báo đăng xuất)
+func NewAuthController(userService *services.UserService) *AuthController {
+	return &AuthController{
+		userService: userService,
+	}
+}
+
+func getValidationMessage(err error) string {
+	if validationErrors, ok := err.(validator.ValidationErrors); ok {
+		for _, fieldError := range validationErrors {
+			switch fieldError.Tag() {
+			case "required":
+				return fmt.Sprintf("%s is required", fieldError.Field())
+			case "email":
+				return fmt.Sprintf("%s format is invalid", fieldError.Field())
+			case "min":
+				return fmt.Sprintf("%s must have at least %s characters", fieldError.Field(), fieldError.Param())
+			}
+		}
+	}
+	return err.Error()
+}
+
+// Register xử lý logic đăng ký user mới
+func (ac *AuthController) Register(c *gin.Context) {
+	var input services.RegisterInput
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Validation error",
+			"message": getValidationMessage(err),
+		})
+		return
+	}
+
+	user, err := ac.userService.Register(input)
+	if err != nil {
+		if err.Error() == "email already exists" || err.Error() == "username already exists" {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":   "Conflict",
+				"message": err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal Server Error",
+			"message": err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "User logged out successfully",
+		"message": "User registered successfully",
+		"userId":  user.ID,
 	})
 }
 
+// Login xử lý logic đăng nhập và trả về JWT token
+func (ac *AuthController) Login(c *gin.Context) {
+	var input services.LoginInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+		return
+	}
+
+	token, user, err := ac.userService.Login(input)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "Login successful",
+		"access_token": token,
+		"user": gin.H{
+			"id":       user.ID,
+			"username": user.Username,
+			"email":    user.Email,
+			"role":     user.Role,
+		},
+	})
+}
+
+// Logout xử lý việc đăng xuất người dùng
+// Với JWT, việc đăng xuất chỉ đơn giản là client không gửi token nữa.
+func (ac *AuthController) Logout(c *gin.Context) {
+	// Để đăng xuất, bạn có thể xóa JWT token trên client (xóa cookie hoặc token lưu trong local storage)
+	// Không cần xử lý trong backend vì JWT là stateless.
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Logged out successfully",
+	})
+}
+
+// GetProfile trả về thông tin profile người dùng hiện tại (được xác thực qua JWT)
+func (ac *AuthController) GetProfile(c *gin.Context) {
+	// Lấy thông tin người dùng từ context (được lưu khi xác thực JWT)
+	user := c.MustGet("user").(*services.User) // Đây là thông tin người dùng đã được xác thực từ JWT middleware
+
+	c.JSON(http.StatusOK, gin.H{
+		"user": gin.H{
+			"id":       user.ID,
+			"username": user.Username,
+			"email":    user.Email,
+			"role":     user.Role,
+		},
+	})
+}
