@@ -19,5 +19,19 @@ func SetupRoutes(router *gin.Engine, fileController *controllers.FileController)
 	// - Auth routes (register, login, logout, TOTP)
 	// - Admin routes (cleanup, policy)
 	// - User routes (profile, my files)
+
+	// Đăng ký route cho authentication
+	authRoutes := router.Group("/auth")
+	{
+		authRoutes.POST("/logout", authController.Logout)
+	}
+
+	// Đăng ký route cho user profile
+	userRoutes := router.Group("/user")
+	{
+		userRoutes.GET("", userController.GetProfile)
+	}
+
+	// Đăng ký các route khác như file, admin...
 }
 
