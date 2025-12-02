@@ -301,7 +301,12 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 	}
 
 	// Add password protection indicator (don't expose actual hash)
-	hasPassword := file.PasswordHash != nil && *file.PasswordHash != ""
+	// Check if password hash exists and is not empty (handle both nil and empty string cases)
+	hasPassword := false
+	if file.PasswordHash != nil {
+		trimmed := strings.TrimSpace(*file.PasswordHash)
+		hasPassword = trimmed != ""
+	}
 	response["file"].(gin.H)["hasPassword"] = hasPassword
 
 	// Add owner info if present (basic info only)
@@ -309,6 +314,127 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 		response["file"].(gin.H)["owner"] = gin.H{
 			"id":       file.Owner.ID,
 			"username": file.Owner.Username,
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// GetFileByID returns detailed file information by UUID (owner/admin only)
+// GET /files/:id
+func (fc *FileController) GetFileByID(c *gin.Context) {
+	// CHECK 401: Kiểm tra đăng nhập
+	currentUserID := getUserIDFromContext(c)
+	if currentUserID == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Unauthorized",
+			"message": "Invalid or missing authentication token",
+		})
+		return
+	}
+
+	// CHECK 400: Validate Input - Must be UUID
+	idStr := c.Param("id")
+	fileID, err := uuid.Parse(idStr)
+	if err != nil {
+		// Not a valid UUID - this route should not match, but handle gracefully
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Validation error",
+			"message": "Invalid file ID format (Must be UUID)",
+		})
+		return
+	}
+
+	// CHECK 404: Tìm file
+	file, err := fc.fileService.GetByID(fileID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":   "Not found",
+				"message": "File not found",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal server error",
+			"message": "Failed to retrieve file",
+		})
+		return
+	}
+
+	// CHECK 403: Kiểm tra quyền truy cập (chỉ owner hoặc admin)
+	currentUserRole := getUserRoleFromContext(c)
+	isOwner := file.OwnerID != nil && *currentUserID == *file.OwnerID
+	isAdmin := currentUserRole == models.RoleAdmin
+	if !isOwner && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "Forbidden",
+			"message": "You don't have permission to access this file",
+		})
+		return
+	}
+
+	// Build response with full metadata (including sensitive info)
+	status := file.GetStatus()
+	response := gin.H{
+		"file": gin.H{
+			"id":         file.ID,
+			"fileName":   file.FileName,
+			"fileSize":   file.FileSize,
+			"mimeType":   file.MimeType,
+			"shareToken": file.ShareToken,
+			"status":     status,
+			"isPublic":   file.IsPublic,
+			"createdAt":  file.CreatedAt,
+		},
+	}
+
+	// Add share link
+	if file.ShareToken != "" {
+		response["file"].(gin.H)["shareLink"] = fmt.Sprintf("/f/%s", file.ShareToken)
+	}
+
+	// Add availability info
+	if file.AvailableFrom != nil {
+		response["file"].(gin.H)["availableFrom"] = file.AvailableFrom
+	}
+	if file.AvailableTo != nil {
+		response["file"].(gin.H)["availableTo"] = file.AvailableTo
+		// Calculate hours remaining if active
+		if status == "active" {
+			hoursRemaining := time.Until(*file.AvailableTo).Hours()
+			if hoursRemaining > 0 {
+				response["file"].(gin.H)["hoursRemaining"] = hoursRemaining
+			}
+		}
+	}
+
+	// Add password protection indicator
+	hasPassword := false
+	if file.PasswordHash != nil {
+		trimmed := strings.TrimSpace(*file.PasswordHash)
+		hasPassword = trimmed != ""
+	}
+	response["file"].(gin.H)["hasPassword"] = hasPassword
+
+	// Add sharedWith list (email addresses)
+	if len(file.SharedWith) > 0 {
+		sharedWithEmails := make([]string, 0, len(file.SharedWith))
+		for _, sw := range file.SharedWith {
+			if sw.User.Email != "" {
+				sharedWithEmails = append(sharedWithEmails, sw.User.Email)
+			}
+		}
+		response["file"].(gin.H)["sharedWith"] = sharedWithEmails
+	}
+
+	// Add owner info (full details)
+	if file.Owner != nil {
+		response["file"].(gin.H)["owner"] = gin.H{
+			"id":       file.Owner.ID,
+			"username": file.Owner.Username,
+			"email":    file.Owner.Email,
+			"role":     file.Owner.Role,
 		}
 	}
 

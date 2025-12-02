@@ -183,7 +183,8 @@ func (s *FileService) defaultValidityDays(ctx context.Context) (int, error) {
 
 func (s *FileService) GetByID(id uuid.UUID) (*models.File, error) {
 	var file models.File
-	err := s.db.Preload("Owner").Preload("Statistics").First(&file, "id = ?", id).Error
+	err := s.db.Preload("Owner").Preload("Statistics").Preload("SharedWith.User").
+		First(&file, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
