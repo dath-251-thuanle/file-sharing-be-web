@@ -12,6 +12,9 @@ func RegisterFileRoutes(router *gin.Engine, fileController *controllers.FileCont
 		// POST /files/upload - Upload a file
 		files.POST("/upload", fileController.UploadFile)
 
+		// GET /files/:shareToken - Get file metadata (no download)
+		files.GET("/:shareToken", fileController.GetFileInfo)
+
 		// GET /files/:shareToken/download - Download a file by share token
 		files.GET("/:shareToken/download", fileController.DownloadFile)
 	}
