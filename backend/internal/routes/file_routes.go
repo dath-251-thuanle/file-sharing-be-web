@@ -12,10 +12,20 @@ func RegisterFileRoutes(router *gin.Engine, fileController *controllers.FileCont
 		// POST /files/upload - Upload a file
 		files.POST("/upload", fileController.UploadFile)
 
-		// GET /files/:shareToken/download - Download a file by share token
-		files.GET("/:shareToken/download", fileController.DownloadFile)
+		// GET /files/stats/:id - Get file statistics
+		stats := files.Group("/stats")
+		{
+			stats.GET("/:id", fileController.GetFileStats)
+		}
 
-		// GET /files/:id/stats - Get file statistics by file ID
-		files.GET("/:id/stats", fileController.GetFileStats)
+		// GET /files/download-history/:id - Get download history
+		download_history := files.Group("/download-history")
+		{
+			download_history.GET("/:id", fileController.GetDownloadHistory)
+		}
+
+		// Route download giữ nguyên
+		files.GET("/:shareToken/download", fileController.DownloadFile)
+		// => /files/:shareToken/download
 	}
 }
