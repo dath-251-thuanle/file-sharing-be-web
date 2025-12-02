@@ -237,13 +237,6 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 // GET /files/:shareToken
 func (fc *FileController) GetFileInfo(c *gin.Context) {
 	shareToken := c.Param("shareToken")
-	if shareToken == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Validation error",
-			"message": "Share token is required",
-		})
-		return
-	}
 
 	// Get file metadata from database
 	file, err := fc.fileService.GetByShareToken(shareToken)
@@ -255,10 +248,6 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Internal server error",
-			"message": "Failed to retrieve file",
-		})
 		return
 	}
 
@@ -321,13 +310,6 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 // GET /files/:shareToken/download
 func (fc *FileController) DownloadFile(c *gin.Context) {
 	shareToken := c.Param("shareToken")
-	if shareToken == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Validation error",
-			"message": "Share token is required",
-		})
-		return
-	}
 
 	// Get current user (optional - for authenticated downloads)
 	currentUserID := getUserIDFromContext(c)
@@ -343,10 +325,6 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Internal server error",
-			"message": "Failed to retrieve file",
-		})
 		return
 	}
 
