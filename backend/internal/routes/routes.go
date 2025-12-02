@@ -26,23 +26,27 @@ func SetupRoutes(router *gin.Engine, fileController *controllers.FileController)
 		log.Printf("Warning: Failed to load config in routes, defaults will be used: %v", err)
 	}
 
+	// Initialize repositories
 	userRepo := repositories.NewUserRepository(db)
+
+	// Initialize services
 	userService := services.NewUserService(userRepo, cfg)
+
+	// Initialize controllers
 	authController := controllers.NewAuthController(userService)
+	userController := controllers.NewUserController(userRepo)
 
-	// Đăng ký group route cho auth
+	// Register auth routes (public)
 	auth := router.Group("/api/auth")
-	{
-		auth.POST("/register", authController.Register)
-		auth.POST("/login", authController.Login)
-		auth.GET("/profile", middleware.JWTAuthMiddleware(cfg), authController.GetProfile) // Route lấy thông tin profile
-		auth.POST("/logout", authController.Logout) // Logout
-	}
+	RegisterAuthRoutes(auth, authController)
 
-	// Đăng ký các route file
+	// Register user routes (with optional JWT middleware)
+	user := router.Group("/api/user")
+	user.Use(middleware.JWTAuthMiddleware(cfg))
+	RegisterUserRoutes(user, userController, cfg)
+
+	// Register file routes (with optional JWT middleware)
 	files := router.Group("/api/files")
 	files.Use(middleware.JWTAuthMiddleware(cfg))
-	{
-		RegisterFileRoutes(files, fileController, cfg)
-	}
+	RegisterFileRoutes(files, fileController, cfg)
 }

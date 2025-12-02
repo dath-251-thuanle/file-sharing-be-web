@@ -96,26 +96,8 @@ func (ac *AuthController) Login(c *gin.Context) {
 }
 
 // Logout xử lý việc đăng xuất người dùng
-// Với JWT, việc đăng xuất chỉ đơn giản là client không gửi token nữa.
 func (ac *AuthController) Logout(c *gin.Context) {
-	// Để đăng xuất, bạn có thể xóa JWT token trên client (xóa cookie hoặc token lưu trong local storage)
-	// Không cần xử lý trong backend vì JWT là stateless.
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Logged out successfully",
-	})
-}
-
-// GetProfile trả về thông tin profile người dùng hiện tại (được xác thực qua JWT)
-func (ac *AuthController) GetProfile(c *gin.Context) {
-	// Lấy thông tin người dùng từ context (được lưu khi xác thực JWT)
-	user := c.MustGet("user").(*services.User) // Đây là thông tin người dùng đã được xác thực từ JWT middleware
-
-	c.JSON(http.StatusOK, gin.H{
-		"user": gin.H{
-			"id":       user.ID,
-			"username": user.Username,
-			"email":    user.Email,
-			"role":     user.Role,
-		},
 	})
 }

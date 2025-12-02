@@ -11,16 +11,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// JWTAuthMiddleware creates a middleware that parses JWT token from Authorization header
-// and sets user information in context if token is valid.
-// This is an optional middleware - it doesn't fail if token is missing,
-// but if token is present and invalid, it will return 401.
+
 func JWTAuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			// No token provided - continue without setting user context
-			// This allows anonymous access for endpoints that support it
 			c.Next()
 			return
 		}
@@ -49,8 +44,6 @@ func JWTAuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 		})
 
 		if err != nil || !token.Valid {
-			// Invalid or expired token - continue without setting user context
-			// Some endpoints may want to handle this differently
 			c.Next()
 			return
 		}
