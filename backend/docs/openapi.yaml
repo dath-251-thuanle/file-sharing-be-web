@@ -564,7 +564,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-  /files/{id}:
+  /files/info/{id}:
     get:
       tags:
         - Files
@@ -578,6 +578,8 @@ paths:
         - Trả về đầy đủ metadata bao gồm cả thông tin nhạy cảm (không public)
         
         **Use case:** Owner xem thông tin file của mình trong dashboard
+        
+        **Lưu ý:** Endpoint này sử dụng path `/files/info/{id}` thay vì `/files/{id}` để tránh conflict với route `/files/{shareToken}` trong Gin router.
       security:
         - BearerAuth: []
       parameters:
@@ -701,7 +703,7 @@ paths:
                     error: Not found
                     message: File not found
 
-  /files/{id}/stats:
+  /files/stats/{id}:
     get:
       tags:
         - Files
@@ -811,7 +813,7 @@ paths:
                     error: Not found
                     message: File not found or statistics not available (anonymous upload)
 
-  /files/{id}/download-history:
+  /files/download-history/{id}:
     get:
       tags:
         - Files
