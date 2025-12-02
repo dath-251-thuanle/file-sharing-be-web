@@ -56,17 +56,16 @@ func main() {
 	auth := router.Group("/api/auth")
 	auth.Use(middleware.JWTAuthMiddleware(cfg))
 
-	router.Run(":8080")
+	// Setup admin routes BEFORE starting server
+	admin.Setup(router, database.GetDB(), store)
 
-	admin.Setup(router, database.GetDB(), store) // Pass the router and the DB instance directly to your single-file admin manager
-
+	// Start server using config
 	addr := cfg.Server.Host + ":" + strconv.Itoa(cfg.Server.Port)
-	go func() {
-		log.Printf("Server running on %s (storage=%T)", addr, store)
-		if err := router.Run(addr); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("failed to run server: %v", err)
-		}
-	}()
+	log.Printf("Server running on %s (storage=%T)", addr, store)
+	
+	if err := router.Run(addr); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("failed to run server: %v", err)
+	}
 
 	waitForShutdown()
 }
