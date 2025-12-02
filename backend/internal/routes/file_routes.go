@@ -25,6 +25,9 @@ func RegisterFileRoutes(router *gin.RouterGroup, fileController *controllers.Fil
 		// GET /api/files/info/:id - Get file info by UUID (owner/admin only)
 		authenticated.GET("/info/:id", fileController.GetFileByID)
 
+		// DELETE /api/files/info/:id - Delete file by UUID (owner/admin only)
+		authenticated.DELETE("/info/:id", fileController.DeleteFile)
+
 		// GET /api/files/stats/:id - Get file statistics
 		stats := authenticated.Group("/stats")
 		{

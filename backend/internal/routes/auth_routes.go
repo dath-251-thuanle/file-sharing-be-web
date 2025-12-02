@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"github.com/dath-251-thuanle/file-sharing-be-web/internal/config"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/controllers"
 	"github.com/gin-gonic/gin"
 )
