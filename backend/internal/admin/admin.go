@@ -35,7 +35,7 @@ func Setup(router *gin.Engine, db *gorm.DB, store storage.Storage) {
 	go rotate_token_job()
 
 	// 3. Register Routes with Auth Middleware
-	admin := router.Group("/api/admin")
+	admin := router.Group("/admin")
 	admin.Use(admin_auth_middleware())
 	{
 		admin.GET("/policy", get_policy(db))
