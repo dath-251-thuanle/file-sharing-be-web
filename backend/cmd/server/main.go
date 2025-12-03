@@ -13,6 +13,8 @@ import (
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/config"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/controllers"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/database"
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/middleware"
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/repositories"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/routes"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/services"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/storage"
@@ -39,15 +41,21 @@ func main() {
 	}
 
 	// Initialize services
+	userRepo := repositories.NewUserRepository(database.GetDB())
+	authService := services.NewAuthService(userRepo, cfg)
 	fileService := services.NewFileService(database.GetDB(), store)
 
 	// Initialize controllers
+	authController := controllers.NewAuthController(authService)
 	fileController := controllers.NewFileController(fileService)
+
+	// Middlewares
+	authMiddleware := middleware.AuthMiddleware(cfg)
 
 	// Setup router
 	router := gin.Default()
 	router.Use(corsMiddleware())
-	routes.SetupRoutes(router, fileController)
+	routes.SetupRoutes(router, fileController, authController, authMiddleware)
 	
 	admin.Setup(router, database.GetDB(), store) // Pass the router and the DB instance directly to your single-file admin manager
 
