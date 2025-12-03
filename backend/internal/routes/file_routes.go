@@ -22,6 +22,9 @@ func RegisterFileRoutes(router *gin.RouterGroup, fileController *controllers.Fil
 	authenticated := router.Group("")
 	authenticated.Use(authMiddleware)
 	{
+		// GET /files/my - Get list of files owned by current user
+		authenticated.GET("/my", fileController.GetMyFiles)
+
 		// GET /files/info/:id - Get file info by UUID (owner/admin only)
 		authenticated.GET("/info/:id", fileController.GetFileByID)
 

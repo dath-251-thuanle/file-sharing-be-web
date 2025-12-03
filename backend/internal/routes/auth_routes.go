@@ -26,6 +26,12 @@ func RegisterAuthRoutes(router *gin.RouterGroup, authController *controllers.Aut
 		// POST /auth/totp/verify - Verify TOTP and enable it
 		protected.POST("/totp/verify", authController.TOTPVerify)
 
+		// POST /auth/totp/disable - Disable TOTP (requires TOTP code)
+		protected.POST("/totp/disable", authController.DisableTOTP)
+
+		// POST /auth/password/change - Change password (requires old password or TOTP code)
+		protected.POST("/password/change", authController.ChangePassword)
+
 		// POST /auth/logout - Logout user
 		protected.POST("/logout", authController.Logout)
 	}

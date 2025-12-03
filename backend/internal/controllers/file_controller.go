@@ -571,18 +571,18 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 
 	// Security check 3: Password verification
 	if file.PasswordHash != nil && *file.PasswordHash != "" {
-		password := c.Query("password")
+		password := strings.TrimSpace(c.GetHeader("X-File-Password"))
+
 		if password == "" {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":   "Password required",
-				"message": "This file is password-protected. Please provide the password parameter",
+				"message": "This file is password-protected. Please provide the password via X-File-Password header",
 			})
 			return
 		}
 
 		// Verify password
-		err := bcrypt.CompareHashAndPassword([]byte(*file.PasswordHash), []byte(password))
-		if err != nil {
+		if err := bcrypt.CompareHashAndPassword([]byte(*file.PasswordHash), []byte(password)); err != nil {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":   "Incorrect password",
 				"message": "The file password is incorrect",
@@ -878,6 +878,117 @@ func getUserRoleFromContext(c *gin.Context) models.UserRole {
 	}
 
 	return role
+}
+
+// GetMyFiles handles GET /files/my - List files owned by current user
+func (fc *FileController) GetMyFiles(c *gin.Context) {
+	// CHECK 401: Require authentication
+	currentUserID := getUserIDFromContext(c)
+	if currentUserID == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Unauthorized",
+			"message": "Invalid or missing authentication token",
+		})
+		return
+	}
+
+	// Parse query parameters
+	status := c.DefaultQuery("status", "all")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	sortBy := c.DefaultQuery("sortBy", "createdAt")
+	order := c.DefaultQuery("order", "desc")
+
+	// Validate pagination
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	// Get files from service
+	files, total, err := fc.fileService.GetByOwnerID(*currentUserID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal server error",
+			"message": "Failed to retrieve files",
+		})
+		return
+	}
+
+	// Filter by status if needed
+	var filteredFiles []models.File
+	if status != "all" {
+		for _, file := range files {
+			fileStatus := file.GetStatus()
+			if fileStatus == status {
+				filteredFiles = append(filteredFiles, file)
+			}
+		}
+	} else {
+		filteredFiles = files
+	}
+
+	// Calculate summary (count by status)
+	activeCount := 0
+	pendingCount := 0
+	expiredCount := 0
+	deletedCount := 0
+
+	// Get all files for summary (not just current page)
+	allFiles, _, err := fc.fileService.GetByOwnerID(*currentUserID, 10000, 0)
+	if err == nil {
+		for _, file := range allFiles {
+			fileStatus := file.GetStatus()
+			switch fileStatus {
+			case "active":
+				activeCount++
+			case "pending":
+				pendingCount++
+			case "expired":
+				expiredCount++
+			}
+		}
+	}
+
+	summary := gin.H{
+		"activeFiles":  activeCount,
+		"pendingFiles": pendingCount,
+		"expiredFiles": expiredCount,
+		"deletedFiles": deletedCount,
+	}
+
+	// Sort filtered files
+	if sortBy == "fileName" {
+		// Simple string sort
+		for i := 0; i < len(filteredFiles)-1; i++ {
+			for j := i + 1; j < len(filteredFiles); j++ {
+				if order == "asc" && filteredFiles[i].FileName > filteredFiles[j].FileName {
+					filteredFiles[i], filteredFiles[j] = filteredFiles[j], filteredFiles[i]
+				} else if order == "desc" && filteredFiles[i].FileName < filteredFiles[j].FileName {
+					filteredFiles[i], filteredFiles[j] = filteredFiles[j], filteredFiles[i]
+				}
+			}
+		}
+	}
+	// createdAt sort is already handled by service (Order("created_at DESC"))
+
+	// Build response
+	totalPages := int(math.Ceil(float64(total) / float64(limit)))
+	response := gin.H{
+		"files": filteredFiles,
+		"pagination": gin.H{
+			"currentPage": page,
+			"totalPages":  totalPages,
+			"totalFiles":  int(total),
+			"limit":       limit,
+		},
+		"summary": summary,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // GET /files/download-history/:id
