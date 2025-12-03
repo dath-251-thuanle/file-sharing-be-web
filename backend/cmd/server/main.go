@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/gin-gonic/gin"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/admin"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/config"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/controllers"
@@ -18,6 +17,7 @@ import (
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/routes"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/services"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/storage"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -44,10 +44,12 @@ func main() {
 	userRepo := repositories.NewUserRepository(database.GetDB())
 	authService := services.NewAuthService(userRepo, cfg)
 	fileService := services.NewFileService(database.GetDB(), store)
+	statsService := services.NewStatisticsService(database.GetDB())
+	historyService := services.NewDownloadHistoryService(database.GetDB())
 
 	// Initialize controllers
 	authController := controllers.NewAuthController(authService)
-	fileController := controllers.NewFileController(fileService)
+	fileController := controllers.NewFileController(fileService, statsService, historyService)
 
 	// Middlewares
 	authMiddleware := middleware.AuthMiddleware(cfg)
@@ -55,17 +57,20 @@ func main() {
 	// Setup router
 	router := gin.Default()
 	router.Use(corsMiddleware())
-	routes.SetupRoutes(router, fileController, authController, authMiddleware)
-	
-	admin.Setup(router, database.GetDB(), store) // Pass the router and the DB instance directly to your single-file admin manager
 
+	// Application routes
+	routes.SetupRoutes(router, fileController, authController, authMiddleware)
+
+	// Admin routes
+	admin.Setup(router, database.GetDB(), store)
+
+	// Start server using config
 	addr := cfg.Server.Host + ":" + strconv.Itoa(cfg.Server.Port)
-	go func() {
-		log.Printf("Server running on %s (storage=%T)", addr, store)
-		if err := router.Run(addr); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("failed to run server: %v", err)
-		}
-	}()
+	log.Printf("Server running on %s (storage=%T)", addr, store)
+
+	if err := router.Run(addr); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("failed to run server: %v", err)
+	}
 
 	waitForShutdown()
 }
@@ -103,8 +108,6 @@ func waitForShutdown() {
 	<-sigCh
 	log.Println("Shutting down server...")
 }
-
-
 
 func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {

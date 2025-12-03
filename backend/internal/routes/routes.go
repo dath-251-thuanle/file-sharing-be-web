@@ -5,7 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SetupRoutes registers all application routes
+// SetupRoutes registers all application routes.
 func SetupRoutes(
 	router *gin.Engine,
 	fileController *controllers.FileController,
@@ -17,35 +17,22 @@ func SetupRoutes(
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// Auth routes
-	auth := router.Group("/auth")
-	{
-		auth.POST("/register", authController.Register)
-		auth.POST("/login", authController.Login)
-		auth.POST("/login/totp", authController.LoginTOTP)
-		auth.POST("/logout", authController.Logout)
+	// Base API group (no /api prefix to match docs: /auth, /user, /files, ...)
+	api := router.Group("/")
 
-		protected := auth.Group("/")
-		protected.Use(authMiddleware)
-		{
-			protected.POST("/totp/setup", authController.TOTPSetup)
-			protected.POST("/totp/verify", authController.TOTPVerify)
-		}
-	}
+	// Auth routes: /auth/*
+	authGroup := api.Group("/auth")
+	RegisterAuthRoutes(authGroup, authController, authMiddleware)
 
-	// User profile
-	userGroup := router.Group("/")
+	// User profile route: /user
+	userGroup := api.Group("/user")
 	userGroup.Use(authMiddleware)
 	{
-		userGroup.GET("/user", authController.Profile)
+		userGroup.GET("", authController.Profile)
 	}
 
-	// Register file routes
-	RegisterFileRoutes(router, fileController)
-
-	// TODO: Add more routes here as needed
-	// - Auth routes (register, login, logout, TOTP)
-	// - Admin routes (cleanup, policy)
-	// - User routes (profile, my files)
+	// File routes: /files/*
+	filesGroup := api.Group("/files")
+	RegisterFileRoutes(filesGroup, fileController, authMiddleware)
 }
 
