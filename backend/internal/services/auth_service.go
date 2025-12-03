@@ -108,8 +108,8 @@ func (s *AuthService) Login(email, password string) (*models.User, bool, error) 
 	return user, totpEnabled, nil
 }
 
-func (s *AuthService) LoginWithTOTP(email, code string) (*models.User, error) {
-	user, err := s.userRepo.GetByEmail(email)
+func (s *AuthService) LoginWithTOTP(userID uuid.UUID, code string) (*models.User, error) {
+	user, err := s.userRepo.GetByID(userID)
 	if err != nil {
 		return nil, err
 	}
@@ -224,6 +224,81 @@ func (s *AuthService) GenerateAccessToken(user *models.User) (string, error) {
 
 func (s *AuthService) GetProfile(userID uuid.UUID) (*models.User, error) {
 	return s.userRepo.GetByID(userID)
+}
+
+// DisableTOTP disables TOTP for a user after verifying the TOTP code
+func (s *AuthService) DisableTOTP(userID uuid.UUID, code string) error {
+	user, err := s.userRepo.GetByID(userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+	if user.TOTPEnabled == nil || !*user.TOTPEnabled {
+		return ErrTOTPNotEnabled
+	}
+	if user.TOTPSecret == nil {
+		return ErrTOTPSecretNotCreated
+	}
+
+	// Verify TOTP code before disabling
+	if !s.validateTOTP(*user.TOTPSecret, code) {
+		return ErrInvalidTOTPCode
+	}
+
+	// Disable TOTP
+	enabled := false
+	user.TOTPEnabled = &enabled
+	// Optionally clear the secret, but we keep it for potential re-enabling
+	return s.userRepo.Update(user)
+}
+
+// ChangePassword changes user password
+// If user has TOTP enabled, can use either oldPassword OR totpCode for verification
+// If user doesn't have TOTP, must use oldPassword
+func (s *AuthService) ChangePassword(userID uuid.UUID, oldPassword, totpCode, newPassword string) error {
+	if len(newPassword) < 8 {
+		return fmt.Errorf("password too short, minimum 8 characters required")
+	}
+
+	user, err := s.userRepo.GetByID(userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+
+	totpEnabled := user.TOTPEnabled != nil && *user.TOTPEnabled
+
+	// Verify identity: either old password or TOTP code
+	if totpEnabled && totpCode != "" {
+		// Use TOTP code for verification
+		if user.TOTPSecret == nil {
+			return ErrTOTPSecretNotCreated
+		}
+		if !s.validateTOTP(*user.TOTPSecret, totpCode) {
+			return ErrInvalidTOTPCode
+		}
+	} else {
+		// Use old password for verification
+		if oldPassword == "" {
+			return fmt.Errorf("old password is required")
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(oldPassword)); err != nil {
+			return ErrInvalidCredentials
+		}
+	}
+
+	// Hash new password
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	user.PasswordHash = string(hash)
+	return s.userRepo.Update(user)
 }
 
 func (s *AuthService) validateTOTP(secret, code string) bool {

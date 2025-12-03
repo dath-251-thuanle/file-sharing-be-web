@@ -18,9 +18,9 @@ info:
     url: https://opensource.org/licenses/MIT
 
 servers:
-  - url: http://localhost:8080/api
+  - url: http://localhost:8080
     description: Development server
-  - url: https://api.filesharing.com/api
+  - url: https://api.filesharing.com
     description: Production server
 
 tags:
@@ -154,6 +154,7 @@ paths:
                   value:
                     requireTOTP: true
                     message: TOTP verification required
+                    userId: 550e8400-e29b-41d4-a716-446655440000
         '401':
           description: Sai email hoặc password
           content:
@@ -189,7 +190,7 @@ paths:
               login:
                 summary: Xác thực TOTP khi đăng nhập
                 value:
-                  email: nam@example.com
+                  userId: 550e8400-e29b-41d4-a716-446655440000
                   code: "123456"
       responses:
         '200':
@@ -1058,7 +1059,7 @@ paths:
         **Thứ tự kiểm tra bảo mật (theo best practice):**
         1. **File status** - Kiểm tra file còn hiệu lực (expired/pending) → 410/423
         2. **Whitelist** - Nếu file có `sharedWith` list → yêu cầu Bearer token, verify user email ∈ whitelist → 403 nếu không có quyền
-        3. **Password** - Nếu file có password → yêu cầu query parameter `password` → 403 nếu sai/thiếu
+        3. **Password** - Nếu file có password → yêu cầu header `X-File-Password` → 403 nếu sai/thiếu
         
         **Lưu ý:** Tất cả các lớp bảo mật phải pass thì mới được download. Bất kỳ lớp nào fail sẽ trả error tương ứng.
         
@@ -1074,8 +1075,9 @@ paths:
         - {}
       parameters:
         - $ref: '#/components/parameters/ShareToken'
-        - name: password
-          in: query
+        - name: X-File-Password
+          in: header
+          required: false
           description: Mật khẩu bảo vệ (nếu file có password)
           schema:
             type: string
@@ -1483,17 +1485,23 @@ components:
         message:
           type: string
           example: TOTP verification required
+        userId:
+          type: string
+          format: uuid
+          description: ID của user cần xác thực TOTP (dùng cho bước /auth/login/totp)
+          example: 550e8400-e29b-41d4-a716-446655440000
 
     TOTPVerifyRequest:
       type: object
       required:
-        - email
+        - userId
         - code
       properties:
-        email:
+        userId:
           type: string
-          format: email
-          example: nam@example.com
+          format: uuid
+          description: ID của user nhận được từ bước /auth/login (requireTOTP=true)
+          example: 550e8400-e29b-41d4-a716-446655440000
         code:
           type: string
           pattern: '^\d{6}$'
