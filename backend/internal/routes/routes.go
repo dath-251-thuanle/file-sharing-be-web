@@ -17,7 +17,6 @@ func SetupRoutes(
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// Base API group (no /api prefix to match docs: /auth, /user, /files, ...)
 	api := router.Group("/")
 
 	// Auth routes: /auth/*

@@ -54,7 +54,7 @@ services:
       - CLOUD_STORAGE_PUBLIC_CONTAINER=${CLOUD_STORAGE_PUBLIC_CONTAINER:-public-file}
       - CLOUD_STORAGE_PRIVATE_CONTAINER=${CLOUD_STORAGE_PRIVATE_CONTAINER:-private-file}
     ports:
-      - "8082:8080"
+      - "8080:8080"
     volumes:
       - .:/app
       - app_storage:/app/storage/uploads

@@ -241,13 +241,19 @@ func userIDFromContext(c *gin.Context) (uuid.UUID, bool) {
 	if !exists {
 		return uuid.Nil, false
 	}
-	userIDStr, ok := userIDVal.(string)
-	if !ok {
-		return uuid.Nil, false
+
+	// Primary case: auth middleware stores uuid.UUID directly
+	if userID, ok := userIDVal.(uuid.UUID); ok {
+		return userID, true
 	}
-	uid, err := uuid.Parse(userIDStr)
-	if err != nil {
-		return uuid.Nil, false
+
+	// Fallback: allow string and parse to UUID (for future compatibility)
+	if userIDStr, ok := userIDVal.(string); ok {
+		uid, err := uuid.Parse(userIDStr)
+		if err == nil {
+			return uid, true
+		}
 	}
-	return uid, true
+
+	return uuid.Nil, false
 }
