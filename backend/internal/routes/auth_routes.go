@@ -5,14 +5,28 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterAuthRoutes registers authentication routes
-func RegisterAuthRoutes(router *gin.RouterGroup, authController *controllers.AuthController) {
-	// POST /api/auth/register - Register new user
+func RegisterAuthRoutes(router *gin.RouterGroup, authController *controllers.AuthController, authMiddleware gin.HandlerFunc) {
+	// Public auth endpoints
+	// POST /auth/register - Register new user
 	router.POST("/register", authController.Register)
-	
-	// POST /api/auth/login - Login user
+
+	// POST /auth/login - Login user (password step)
 	router.POST("/login", authController.Login)
-	
-	// POST /api/auth/logout - Logout user
-	router.POST("/logout", authController.Logout)
+
+	// POST /auth/login/totp - Login with TOTP after password step
+	router.POST("/login/totp", authController.LoginTOTP)
+
+	// Protected auth endpoints (require valid JWT)
+	protected := router.Group("")
+	protected.Use(authMiddleware)
+	{
+		// POST /auth/totp/setup - Generate TOTP secret and QR
+		protected.POST("/totp/setup", authController.TOTPSetup)
+
+		// POST /auth/totp/verify - Verify TOTP and enable it
+		protected.POST("/totp/verify", authController.TOTPVerify)
+
+		// POST /auth/logout - Logout user
+		protected.POST("/logout", authController.Logout)
+	}
 }

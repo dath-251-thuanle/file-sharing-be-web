@@ -12,10 +12,11 @@ import (
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/config"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/controllers"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/database"
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/middleware"
+	"github.com/dath-251-thuanle/file-sharing-be-web/internal/repositories"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/routes"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/services"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/storage"
-	"github.com/dath-251-thuanle/file-sharing-be-web/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,29 +41,33 @@ func main() {
 	}
 
 	// Initialize services
+	userRepo := repositories.NewUserRepository(database.GetDB())
+	authService := services.NewAuthService(userRepo, cfg)
 	fileService := services.NewFileService(database.GetDB(), store)
 	statsService := services.NewStatisticsService(database.GetDB())
 	historyService := services.NewDownloadHistoryService(database.GetDB())
 
 	// Initialize controllers
+	authController := controllers.NewAuthController(authService)
 	fileController := controllers.NewFileController(fileService, statsService, historyService)
+
+	// Middlewares
+	authMiddleware := middleware.AuthMiddleware(cfg)
 
 	// Setup router
 	router := gin.Default()
 	router.Use(corsMiddleware())
-	routes.SetupRoutes(router, fileController)
 
-	// Use JWT middleware for protected routes
-	auth := router.Group("/api/auth")
-	auth.Use(middleware.JWTAuthMiddleware(cfg))
+	// Application routes
+	routes.SetupRoutes(router, fileController, authController, authMiddleware)
 
-	// Setup admin routes BEFORE starting server
+	// Admin routes
 	admin.Setup(router, database.GetDB(), store)
 
 	// Start server using config
 	addr := cfg.Server.Host + ":" + strconv.Itoa(cfg.Server.Port)
 	log.Printf("Server running on %s (storage=%T)", addr, store)
-	
+
 	if err := router.Run(addr); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("failed to run server: %v", err)
 	}
