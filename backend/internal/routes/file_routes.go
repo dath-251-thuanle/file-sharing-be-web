@@ -1,43 +1,60 @@
 package routes
 
 import (
-	"github.com/dath-251-thuanle/file-sharing-be-web/internal/config"
+	"strings"
+
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/controllers"
-	"github.com/dath-251-thuanle/file-sharing-be-web/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterFileRoutes registers file-related routes
-func RegisterFileRoutes(router *gin.RouterGroup, fileController *controllers.FileController, cfg *config.Config) {
-	// POST /api/files/upload - Upload a file
-	router.POST("/upload", fileController.UploadFile)
+func RegisterFileRoutes(router *gin.RouterGroup, fileController *controllers.FileController, authMiddleware gin.HandlerFunc) {
+	// Public endpoints
+	// POST /files/upload - Upload a file
+	router.POST("/upload", optionalAuth(authMiddleware), fileController.UploadFile)
 
-	// GET /api/files/:shareToken - Get file metadata (public, no auth required)
+	// GET /files/:shareToken - Get file metadata (public, no auth required)
 	router.GET("/:shareToken", fileController.GetFileInfo)
 
-	// GET /api/files/:shareToken/download - Download a file
-	router.GET("/:shareToken/download", fileController.DownloadFile)
+	// GET /files/:shareToken/download - Download a file (requires valid Bearer token)
+	router.GET("/:shareToken/download", optionalAuth(authMiddleware), fileController.DownloadFile)
 
 	// Authenticated routes group
 	authenticated := router.Group("")
-	authenticated.Use(middleware.RequireAuth(cfg))
+	authenticated.Use(authMiddleware)
 	{
-		// GET /api/files/info/:id - Get file info by UUID (owner/admin only)
+		// GET /files/info/:id - Get file info by UUID (owner/admin only)
 		authenticated.GET("/info/:id", fileController.GetFileByID)
 
-		// DELETE /api/files/info/:id - Delete file by UUID (owner/admin only)
+		// DELETE /files/info/:id - Delete file by UUID (owner/admin only)
 		authenticated.DELETE("/info/:id", fileController.DeleteFile)
 
-		// GET /api/files/stats/:id - Get file statistics
+		// GET /files/stats/:id - Get file statistics
 		stats := authenticated.Group("/stats")
 		{
 			stats.GET("/:id", fileController.GetFileStats)
 		}
 
-		// GET /api/files/download-history/:id - Get download history
+		// GET /files/download-history/:id - Get download history
 		downloadHistory := authenticated.Group("/download-history")
 		{
 			downloadHistory.GET("/:id", fileController.GetDownloadHistory)
 		}
+	}
+}
+
+// optionalAuth wraps the required auth middleware so that:
+// - If there is no Bearer token, the request continues as anonymous.
+// - If a Bearer token is present, it must be valid; otherwise, 401 is returned.
+func optionalAuth(authMiddleware gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			// No token provided -> continue as anonymous request
+			c.Next()
+			return
+		}
+
+		// Token present -> delegate to full auth middleware
+		authMiddleware(c)
 	}
 }
