@@ -9,9 +9,9 @@ import (
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
-// AuthMiddleware validates JWT bearer tokens and injects user info into the context.
 func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -36,7 +36,17 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		c.Set("userID", claims.UserID)
+		// Ensure userID is a valid UUID (v4) in context
+		userUUID, err := uuid.Parse(claims.UserID)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error":   "Unauthorized",
+				"message": "Invalid user identifier in token",
+			})
+			return
+		}
+
+		c.Set("userID", userUUID)
 		c.Set("userEmail", claims.Email)
 		c.Set("userRole", claims.Role)
 		c.Set("totpEnabled", claims.TOTPEnabled)

@@ -5,8 +5,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterAuthRoutes registers authentication routes under a given router group.
-// The passed router is expected to be something like router.Group("/auth").
 func RegisterAuthRoutes(router *gin.RouterGroup, authController *controllers.AuthController, authMiddleware gin.HandlerFunc) {
 	// Public auth endpoints
 	// POST /auth/register - Register new user
