@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/admin"
@@ -40,9 +42,12 @@ func main() {
 		log.Fatalf("failed to initialize storage: %v", err)
 	}
 
-	// Initialize services
+	// Initialize repositories
 	userRepo := repositories.NewUserRepository(database.GetDB())
-	authService := services.NewAuthService(userRepo, cfg)
+	loginSessionRepo := repositories.NewLoginSessionRepository(database.GetDB())
+
+	// Initialize services
+	authService := services.NewAuthServiceWithLoginSessions(userRepo, loginSessionRepo, cfg)
 	fileService := services.NewFileService(database.GetDB(), store)
 	statsService := services.NewStatisticsService(database.GetDB())
 	historyService := services.NewDownloadHistoryService(database.GetDB())
@@ -56,7 +61,7 @@ func main() {
 
 	// Setup router
 	router := gin.Default()
-	router.Use(corsMiddleware())
+	router.Use(corsMiddleware(&cfg.CORS))
 
 	// Application routes
 	routes.SetupRoutes(router, fileController, authController, authMiddleware)
@@ -109,16 +114,84 @@ func waitForShutdown() {
 	log.Println("Shutting down server...")
 }
 
-func corsMiddleware() gin.HandlerFunc {
+func corsMiddleware(corsCfg *config.CORSConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, X-Cron-Secret")
+		origin := c.Request.Header.Get("Origin")
+		var allowedOrigin string
+
+		if len(corsCfg.AllowedOrigins) > 0 {
+			for _, allowed := range corsCfg.AllowedOrigins {
+				allowedTrimmed := strings.TrimSuffix(allowed, "/")
+				originTrimmed := strings.TrimSuffix(origin, "/")
+				if originTrimmed == allowedTrimmed {
+					allowedOrigin = origin
+					break
+				}
+			}
+		} else {
+			if corsCfg.AllowCredentials {
+				if origin != "" {
+					allowedOrigin = origin
+				}
+			} else {
+				allowedOrigin = "*"
+			}
+		}
+
+		if allowedOrigin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+
+			if corsCfg.AllowCredentials && allowedOrigin != "*" {
+				c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
+		}
+
+		methods := "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+		if len(corsCfg.AllowedMethods) > 0 {
+			methods = ""
+			for i, method := range corsCfg.AllowedMethods {
+				if i > 0 {
+					methods += ", "
+				}
+				methods += method
+			}
+		}
+		c.Writer.Header().Set("Access-Control-Allow-Methods", methods)
+
+		headers := "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, X-Cron-Secret"
+		if len(corsCfg.AllowedHeaders) > 0 {
+			headers = ""
+			for i, header := range corsCfg.AllowedHeaders {
+				if i > 0 {
+					headers += ", "
+				}
+				headers += header
+			}
+		}
+		c.Writer.Header().Set("Access-Control-Allow-Headers", headers)
+
+		if len(corsCfg.ExposeHeaders) > 0 {
+			exposeHeaders := ""
+			for i, header := range corsCfg.ExposeHeaders {
+				if i > 0 {
+					exposeHeaders += ", "
+				}
+				exposeHeaders += header
+			}
+			c.Writer.Header().Set("Access-Control-Expose-Headers", exposeHeaders)
+		}
+
+		if corsCfg.MaxAge != "" {
+			if maxAge, err := corsCfg.GetMaxAge(); err == nil {
+				c.Writer.Header().Set("Access-Control-Max-Age", fmt.Sprintf("%.0f", maxAge.Seconds()))
+			}
+		}
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
 		}
+
 		c.Next()
 	}
 }

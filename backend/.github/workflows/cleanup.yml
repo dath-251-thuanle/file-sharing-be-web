@@ -27,7 +27,7 @@ jobs:
         run: |
           curl -X POST \
             -H "X-Cron-Secret: ${{ secrets.CLEANUP_SECRET }}" \
-            ${{ secrets.API_URL }}/api/admin/cleanup
+            ${{ secrets.API_URL }}/admin/cleanup
 
       - name: Verify cleanup
         run: |

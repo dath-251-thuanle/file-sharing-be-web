@@ -30,6 +30,41 @@ func NewFileService(db *gorm.DB, st storage.Storage) *FileService {
 	}
 }
 
+func (s *FileService) GetSystemPolicy(ctx context.Context) (*models.SystemPolicy, error) {
+	var policy models.SystemPolicy
+	if err := s.db.WithContext(ctx).First(&policy, 1).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &models.SystemPolicy{
+				ID:                       1,
+				MaxFileSizeMB:            50,
+				MinValidityHours:         1,
+				MaxValidityDays:          30,
+				DefaultValidityDays:      7,
+				RequirePasswordMinLength: 8,
+			}, nil
+		}
+		return nil, err
+	}
+
+	if policy.MaxFileSizeMB <= 0 {
+		policy.MaxFileSizeMB = 50
+	}
+	if policy.MinValidityHours <= 0 {
+		policy.MinValidityHours = 1
+	}
+	if policy.MaxValidityDays <= 0 {
+		policy.MaxValidityDays = 30
+	}
+	if policy.DefaultValidityDays <= 0 {
+		policy.DefaultValidityDays = 7
+	}
+	if policy.RequirePasswordMinLength < 4 {
+		policy.RequirePasswordMinLength = 8
+	}
+
+	return &policy, nil
+}
+
 type UploadInput struct {
 	FileName      string
 	ContentType   string
@@ -69,7 +104,6 @@ func (s *FileService) UploadFile(ctx context.Context, input *UploadInput) (*mode
 		return nil, fmt.Errorf("file service: storage backend is not configured")
 	}
 	isPrivate := input.IsPublic != nil && !*input.IsPublic
-	// Anonymous users cannot upload private files
 	if isPrivate && input.OwnerID == nil {
 		return nil, fmt.Errorf("anonymous private uploads require authentication")
 	}
@@ -130,6 +164,54 @@ func (s *FileService) UploadFile(ctx context.Context, input *UploadInput) (*mode
 	}
 
 	return file, nil
+}
+
+// AddSharedWithUsers adds users to shared_with table by their emails
+func (s *FileService) AddSharedWithUsers(ctx context.Context, fileID uuid.UUID, ownerID *uuid.UUID, emails []string) error {
+	if len(emails) == 0 {
+		return nil
+	}
+
+	// Normalize emails (trim and lowercase)
+	normalizedEmails := make([]string, 0, len(emails))
+	for _, email := range emails {
+		email = strings.TrimSpace(strings.ToLower(email))
+		if email != "" {
+			normalizedEmails = append(normalizedEmails, email)
+		}
+	}
+
+	if len(normalizedEmails) == 0 {
+		return nil
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Find users by email
+		var users []models.User
+		if err := tx.Where("LOWER(email) IN ?", normalizedEmails).Find(&users).Error; err != nil {
+			return err
+		}
+
+		// Create shared_with records (excluding owner)
+		for _, user := range users {
+			// Skip if this is the owner
+			if ownerID != nil && user.ID == *ownerID {
+				continue
+			}
+
+			sharedWith := &models.SharedWith{
+				FileID: fileID,
+				UserID: user.ID,
+			}
+			// Use Create with OnConflict to handle duplicates gracefully
+			if err := tx.Where("file_id = ? AND user_id = ?", fileID, user.ID).
+				FirstOrCreate(sharedWith).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 func optionalString(val string) *string {

@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -104,19 +105,20 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 	}
 
 	if password != "" {
-		policy, err := getSystemPolicy(c.Request.Context(), fc.fileService)
-		if err == nil && len(password) < policy.RequirePasswordMinLength {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "Validation error",
-				"message": fmt.Sprintf("Password must have at least %d characters", policy.RequirePasswordMinLength),
+		// Validate password length against system policy
+		policy, err := fc.fileService.GetSystemPolicy(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Internal server error",
+				"message": "Failed to load system policy",
 			})
 			return
 		}
-		// Default minimum if policy not found
-		if len(password) < 8 {
+
+		if len(password) < policy.RequirePasswordMinLength {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":   "Validation error",
-				"message": "Password must have at least 8 characters",
+				"message": fmt.Sprintf("Password must have at least %d characters", policy.RequirePasswordMinLength),
 			})
 			return
 		}
@@ -169,6 +171,44 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 			"message": "availableFrom must be before availableTo and within allowed policy window",
 		})
 		return
+	}
+
+	// Additional validation against system policy when custom availability is provided
+	if availableFrom != nil || availableTo != nil {
+		policy, err := fc.fileService.GetSystemPolicy(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Internal server error",
+				"message": "Failed to load system policy",
+			})
+			return
+		}
+
+		now := time.Now().UTC()
+
+		// availableTo must not be in the past
+		if availableTo != nil && availableTo.Before(now) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Validation error",
+				"message": "availableTo cannot be in the past",
+			})
+			return
+		}
+
+		if availableFrom != nil && availableTo != nil {
+			duration := availableTo.Sub(*availableFrom)
+
+			minDuration := time.Duration(policy.MinValidityHours) * time.Hour
+			maxDuration := time.Duration(policy.MaxValidityDays) * 24 * time.Hour
+
+			if duration < minDuration || duration > maxDuration {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error":   "Validation error",
+					"message": "availableFrom must be before availableTo and within allowed policy window",
+				})
+				return
+			}
+		}
 	}
 
 	// Get Content-Type from header, or detect from file extension
@@ -228,6 +268,14 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 		return
 	}
 
+	// Add sharedWith users if provided
+	if len(sharedWithEmails) > 0 && currentUserID != nil {
+		if err := fc.fileService.AddSharedWithUsers(c.Request.Context(), storedFile.ID, currentUserID, sharedWithEmails); err != nil {
+			// Log error but don't fail the upload
+			fmt.Printf("Warning: Failed to add sharedWith users: %v\n", err)
+		}
+	}
+
 	response := gin.H{
 		"success": true,
 		"message": "File uploaded successfully",
@@ -258,6 +306,10 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 			})
 			return
 		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal server error",
+			"message": "Failed to retrieve file",
+		})
 		return
 	}
 
@@ -271,11 +323,13 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 		return
 	}
 
-	// Check if password hash exists and is not empty
 	hasPassword := file.PasswordHash != nil && 
 		*file.PasswordHash != "" && 
 		len(*file.PasswordHash) >= 60 && 
 		strings.HasPrefix(*file.PasswordHash, "$2")
+
+	currentUserID := getUserIDFromContext(c)
+	isOwner := currentUserID != nil && file.OwnerID != nil && *currentUserID == *file.OwnerID
 
 	response := gin.H{
 		"file": gin.H{
@@ -286,6 +340,19 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 			"isPublic":   file.IsPublic,
 			"hasPassword": hasPassword,
 		},
+	}
+
+	if isOwner && len(file.SharedWith) > 0 {
+		sharedWithEmails := make([]string, 0, len(file.SharedWith))
+		for _, sw := range file.SharedWith {
+			// Exclude owner from sharedWith list (owner is not a shared user)
+			if sw.User.Email != "" && (file.OwnerID == nil || sw.UserID != *file.OwnerID) {
+				sharedWithEmails = append(sharedWithEmails, sw.User.Email)
+			}
+		}
+		if len(sharedWithEmails) > 0 {
+			response["file"].(gin.H)["sharedWith"] = sharedWithEmails
+		}
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -380,26 +447,24 @@ func (fc *FileController) GetFileByID(c *gin.Context) {
 		}
 	}
 
-	// Add password protection indicator
-	hasPassword := false
-	if file.PasswordHash != nil {
-		trimmed := strings.TrimSpace(*file.PasswordHash)
-		hasPassword = trimmed != ""
-	}
+	hasPassword := file.PasswordHash != nil && 
+		*file.PasswordHash != "" && 
+		len(*file.PasswordHash) >= 60 && 
+		strings.HasPrefix(*file.PasswordHash, "$2")
 	response["file"].(gin.H)["hasPassword"] = hasPassword
 
-	// Add sharedWith list (email addresses)
 	if len(file.SharedWith) > 0 {
 		sharedWithEmails := make([]string, 0, len(file.SharedWith))
 		for _, sw := range file.SharedWith {
-			if sw.User.Email != "" {
+			if sw.User.Email != "" && (file.OwnerID == nil || sw.UserID != *file.OwnerID) {
 				sharedWithEmails = append(sharedWithEmails, sw.User.Email)
 			}
 		}
-		response["file"].(gin.H)["sharedWith"] = sharedWithEmails
+		if len(sharedWithEmails) > 0 {
+			response["file"].(gin.H)["sharedWith"] = sharedWithEmails
+		}
 	}
 
-	// Add owner info (full details)
 	if file.Owner != nil {
 		response["file"].(gin.H)["owner"] = gin.H{
 			"id":       file.Owner.ID,
@@ -454,7 +519,6 @@ func (fc *FileController) DeleteFile(c *gin.Context) {
 	}
 
 	// CHECK 403: Kiểm tra quyền truy cập (chỉ owner hoặc admin)
-	// Anonymous uploads (OwnerID == nil) không thể xóa
 	if file.OwnerID == nil {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":   "Forbidden",
@@ -495,7 +559,6 @@ func (fc *FileController) DeleteFile(c *gin.Context) {
 func (fc *FileController) DownloadFile(c *gin.Context) {
 	shareToken := c.Param("shareToken")
 
-	// Get current user (optional - for authenticated downloads)
 	currentUserID := getUserIDFromContext(c)
 	currentUserEmail := getUserEmailFromContext(c)
 
@@ -513,7 +576,6 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 	}
 
 	// Security check 1: File status (expired/pending)
-	// Owner can bypass pending status for preview
 	isOwner := currentUserID != nil && file.OwnerID != nil && *currentUserID == *file.OwnerID
 	status := file.GetStatus()
 
@@ -526,7 +588,6 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 	}
 
 	if status == "pending" && !isOwner {
-		// Calculate hours until available
 		hoursUntilAvailable := 0.0
 		if file.AvailableFrom != nil {
 			hoursUntilAvailable = time.Until(*file.AvailableFrom).Hours()
@@ -540,7 +601,6 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 	}
 
 	// Security check 2: Whitelist (sharedWith)
-	// If file has sharedWith list, require authentication and verify email
 	if len(file.SharedWith) > 0 {
 		if currentUserID == nil || currentUserEmail == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
@@ -550,7 +610,6 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 			return
 		}
 
-		// Check if user email is in whitelist
 		isWhitelisted := false
 		for _, shared := range file.SharedWith {
 			if shared.User.Email != "" && strings.EqualFold(shared.User.Email, currentUserEmail) {
@@ -559,7 +618,6 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 			}
 		}
 
-		// Owner is always allowed
 		if !isWhitelisted && !isOwner {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":   "Access denied",
@@ -570,7 +628,7 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 	}
 
 	// Security check 3: Password verification
-	if file.PasswordHash != nil && *file.PasswordHash != "" {
+	if file.PasswordHash != nil && *file.PasswordHash != "" && !isOwner {
 		password := strings.TrimSpace(c.GetHeader("X-File-Password"))
 
 		if password == "" {
@@ -581,7 +639,6 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 			return
 		}
 
-		// Verify password
 		if err := bcrypt.CompareHashAndPassword([]byte(*file.PasswordHash), []byte(password)); err != nil {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":   "Incorrect password",
@@ -591,10 +648,8 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 		}
 	}
 
-	// Determine container type based on file's isPublic field
 	container := containerFromFile(file)
 
-	// Download file from storage
 	downloadResult, err := fc.fileService.Download(c.Request.Context(), &file.FilePath, container)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -605,12 +660,10 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 	}
 	defer downloadResult.Reader.Close()
 
-	// Set response headers
 	c.Header("Content-Disposition", "attachment; filename=\""+file.FileName+"\"")
 	c.Header("Content-Type", downloadResult.ContentType)
 	c.Header("Content-Length", fmt.Sprintf("%d", downloadResult.Size))
 
-	// Stream file to response
 	c.Status(http.StatusOK)
 	bytesCopied, copyError := io.Copy(c.Writer, downloadResult.Reader)
 
@@ -620,10 +673,9 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 	userID := currentUserID
 
 	go func() {
-		// GHI LỊCH SỬ
 		err := fc.historyService.Create(&models.DownloadHistory{
 			FileID:            fileID,
-			DownloaderID:      userID, // nil nếu là khách
+			DownloaderID:      userID,
 			DownloadCompleted: &isCompleted,
 			DownloadedAt:      time.Now(),
 		})
@@ -635,7 +687,6 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 			_ = fc.statsService.IncrementDownloadCount(fileID)
 			_ = fc.statsService.UpdateLastDownloadedAt(fileID)
 
-			// XỬ LÝ UNIQUE DOWNLOADER
 			if userID != nil {
 				history, _ := fc.historyService.GetByFileIDAndDownloaderID(fileID, *userID)
 
@@ -660,10 +711,7 @@ func containerFromFile(file *models.File) storage.ContainerType {
 	return storage.ContainerPrivate
 }
 
-// getUserIDFromContext extracts user ID from JWT token in context
-// Returns nil if user is not authenticated
 func getUserIDFromContext(c *gin.Context) *uuid.UUID {
-	// Try to get user ID from context (set by auth middleware)
 	userIDVal, exists := c.Get("userID")
 	if !exists {
 		return nil
@@ -671,7 +719,6 @@ func getUserIDFromContext(c *gin.Context) *uuid.UUID {
 
 	userID, ok := userIDVal.(uuid.UUID)
 	if !ok {
-		// Try string conversion
 		if userIDStr, ok := userIDVal.(string); ok {
 			parsed, err := uuid.Parse(userIDStr)
 			if err == nil {
@@ -684,8 +731,6 @@ func getUserIDFromContext(c *gin.Context) *uuid.UUID {
 	return &userID
 }
 
-// getUserEmailFromContext extracts user email from JWT token in context
-// Returns empty string if user is not authenticated
 func getUserEmailFromContext(c *gin.Context) string {
 	emailVal, exists := c.Get("userEmail")
 	if !exists {
@@ -700,48 +745,18 @@ func getUserEmailFromContext(c *gin.Context) string {
 	return email
 }
 
-// getSystemPolicy retrieves system policy from database
-// Returns default policy if not found or on error
-func getSystemPolicy(ctx context.Context, fileService *services.FileService) (*SystemPolicy, error) {
-	// TODO: Add GetSystemPolicy method to FileService to access db
-	// For now, return default policy
-	// In production, this should query the database
-	return &SystemPolicy{
-		MaxFileSizeMB:            50,
-		MinValidityHours:         1,
-		MaxValidityDays:          30,
-		DefaultValidityDays:      7,
-		RequirePasswordMinLength: 8,
-	}, nil
-}
-
-// SystemPolicy represents system configuration
-type SystemPolicy struct {
-	MaxFileSizeMB            int
-	MinValidityHours         int
-	MaxValidityDays          int
-	DefaultValidityDays      int
-	RequirePasswordMinLength int
-}
-
-// detectContentType detects MIME type from file extension
 func detectContentType(ext string) string {
-	// Common MIME types mapping
 	mimeTypes := map[string]string{
-		// Microsoft Office (legacy)
 		".doc": "application/msword",
 		".xls": "application/vnd.ms-excel",
 		".ppt": "application/vnd.ms-powerpoint",
 
-		// Microsoft Office (modern - Office Open XML)
 		".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 		".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 		".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 
-		// PDF
 		".pdf": "application/pdf",
 
-		// Images
 		".jpg":  "image/jpeg",
 		".jpeg": "image/jpeg",
 		".png":  "image/png",
@@ -750,7 +765,6 @@ func detectContentType(ext string) string {
 		".webp": "image/webp",
 		".svg":  "image/svg+xml",
 
-		// Text
 		".txt":  "text/plain",
 		".csv":  "text/csv",
 		".html": "text/html",
@@ -759,20 +773,17 @@ func detectContentType(ext string) string {
 		".json": "application/json",
 		".xml":  "application/xml",
 
-		// Archives
 		".zip": "application/zip",
 		".rar": "application/x-rar-compressed",
 		".7z":  "application/x-7z-compressed",
 		".tar": "application/x-tar",
 		".gz":  "application/gzip",
 
-		// Audio
 		".mp3": "audio/mpeg",
 		".wav": "audio/wav",
 		".ogg": "audio/ogg",
 		".m4a": "audio/mp4",
 
-		// Video
 		".mp4":  "video/mp4",
 		".avi":  "video/x-msvideo",
 		".mov":  "video/quicktime",
@@ -785,18 +796,15 @@ func detectContentType(ext string) string {
 		return mimeType
 	}
 
-	// Fallback to Go's built-in mime detection
 	if detectedType := mime.TypeByExtension(ext); detectedType != "" {
 		return detectedType
 	}
 
-	// Default fallback
 	return "application/octet-stream"
 }
 
 // GET /files/stats/:id
 func (fc *FileController) GetFileStats(c *gin.Context) {
-	//CHECK 401: Kiểm tra đăng nhập
 	currentUserID := getUserIDFromContext(c)
 	if currentUserID == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -806,7 +814,6 @@ func (fc *FileController) GetFileStats(c *gin.Context) {
 		return
 	}
 
-	// CHECK 400: Validate Input
 	idStr := c.Param("id")
 	fileID, err := uuid.Parse(idStr)
 	if err != nil {
@@ -817,7 +824,6 @@ func (fc *FileController) GetFileStats(c *gin.Context) {
 		return
 	}
 
-	// CHECK 404: Tìm file
 	file, err := fc.fileService.GetByID(fileID)
 	if err != nil || file.OwnerID == nil {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -827,7 +833,6 @@ func (fc *FileController) GetFileStats(c *gin.Context) {
 		return
 	}
 
-	//CHECK 403: Kiểm tra chính chủ
 	currentUserRole := getUserRoleFromContext(c)
 	isOwner := *currentUserID == *file.OwnerID
 	isAdmin := currentUserRole == models.RoleAdmin
@@ -882,7 +887,6 @@ func getUserRoleFromContext(c *gin.Context) models.UserRole {
 
 // GetMyFiles handles GET /files/my - List files owned by current user
 func (fc *FileController) GetMyFiles(c *gin.Context) {
-	// CHECK 401: Require authentication
 	currentUserID := getUserIDFromContext(c)
 	if currentUserID == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -892,14 +896,12 @@ func (fc *FileController) GetMyFiles(c *gin.Context) {
 		return
 	}
 
-	// Parse query parameters
 	status := c.DefaultQuery("status", "all")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	sortBy := c.DefaultQuery("sortBy", "createdAt")
-	order := c.DefaultQuery("order", "desc")
+	order := strings.ToLower(c.DefaultQuery("order", "desc"))
 
-	// Validate pagination
 	if page < 1 {
 		page = 1
 	}
@@ -908,7 +910,6 @@ func (fc *FileController) GetMyFiles(c *gin.Context) {
 	}
 	offset := (page - 1) * limit
 
-	// Get files from service
 	files, total, err := fc.fileService.GetByOwnerID(*currentUserID, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -918,7 +919,6 @@ func (fc *FileController) GetMyFiles(c *gin.Context) {
 		return
 	}
 
-	// Filter by status if needed
 	var filteredFiles []models.File
 	if status != "all" {
 		for _, file := range files {
@@ -931,13 +931,11 @@ func (fc *FileController) GetMyFiles(c *gin.Context) {
 		filteredFiles = files
 	}
 
-	// Calculate summary (count by status)
 	activeCount := 0
 	pendingCount := 0
 	expiredCount := 0
 	deletedCount := 0
 
-	// Get all files for summary (not just current page)
 	allFiles, _, err := fc.fileService.GetByOwnerID(*currentUserID, 10000, 0)
 	if err == nil {
 		for _, file := range allFiles {
@@ -960,25 +958,101 @@ func (fc *FileController) GetMyFiles(c *gin.Context) {
 		"deletedFiles": deletedCount,
 	}
 
-	// Sort filtered files
+	// Sort filtered files theo sortBy/order giống docs
 	if sortBy == "fileName" {
-		// Simple string sort
-		for i := 0; i < len(filteredFiles)-1; i++ {
-			for j := i + 1; j < len(filteredFiles); j++ {
-				if order == "asc" && filteredFiles[i].FileName > filteredFiles[j].FileName {
-					filteredFiles[i], filteredFiles[j] = filteredFiles[j], filteredFiles[i]
-				} else if order == "desc" && filteredFiles[i].FileName < filteredFiles[j].FileName {
-					filteredFiles[i], filteredFiles[j] = filteredFiles[j], filteredFiles[i]
+		sort.Slice(filteredFiles, func(i, j int) bool {
+			nameI := strings.ToLower(filteredFiles[i].FileName)
+			nameJ := strings.ToLower(filteredFiles[j].FileName)
+			if order == "asc" {
+				return nameI < nameJ
+			}
+			return nameI > nameJ
+		})
+	} else if sortBy == "createdAt" {
+		sort.Slice(filteredFiles, func(i, j int) bool {
+			if order == "asc" {
+				return filteredFiles[i].CreatedAt.Before(filteredFiles[j].CreatedAt)
+			}
+			// Mặc định desc
+			return filteredFiles[i].CreatedAt.After(filteredFiles[j].CreatedAt)
+		})
+	}
+
+	// Build files response để khớp schema File (camelCase) trong OpenAPI
+	filesResponse := make([]gin.H, 0, len(filteredFiles))
+	for _, f := range filteredFiles {
+		fileStatus := f.GetStatus()
+
+		fileObj := gin.H{
+			"id":         f.ID,
+			"fileName":   f.FileName,
+			"shareToken": f.ShareToken,
+			"status":     fileStatus,
+			"createdAt":  f.CreatedAt,
+		}
+
+		if f.FileSize > 0 {
+			fileObj["fileSize"] = f.FileSize
+		}
+		if f.MimeType != nil {
+			fileObj["mimeType"] = *f.MimeType
+		}
+		if f.IsPublic != nil {
+			fileObj["isPublic"] = *f.IsPublic
+		}
+		if f.AvailableFrom != nil {
+			fileObj["availableFrom"] = f.AvailableFrom
+		}
+		if f.AvailableTo != nil {
+			fileObj["availableTo"] = f.AvailableTo
+
+			// Calculate hours remaining if active
+			if fileStatus == "active" {
+				hoursRemaining := time.Until(*f.AvailableTo).Hours()
+				if hoursRemaining > 0 {
+					fileObj["hoursRemaining"] = hoursRemaining
 				}
 			}
 		}
+
+		// Password protection indicator
+		hasPassword := f.PasswordHash != nil && 
+			*f.PasswordHash != "" && 
+			len(*f.PasswordHash) >= 60 && 
+			strings.HasPrefix(*f.PasswordHash, "$2")
+		fileObj["hasPassword"] = hasPassword
+
+		// Owner info
+		if f.Owner != nil {
+			fileObj["owner"] = gin.H{
+				"id":       f.Owner.ID,
+				"username": f.Owner.Username,
+				"email":    f.Owner.Email,
+				"role":     f.Owner.Role,
+			}
+		}
+
+		// sharedWith emails if loaded - exclude owner
+		if len(f.SharedWith) > 0 {
+			sharedWithEmails := make([]string, 0, len(f.SharedWith))
+			for _, sw := range f.SharedWith {
+				// Exclude owner from sharedWith list (owner is not a shared user)
+				if sw.User.Email != "" && (f.OwnerID == nil || sw.UserID != *f.OwnerID) {
+					sharedWithEmails = append(sharedWithEmails, sw.User.Email)
+				}
+			}
+			if len(sharedWithEmails) > 0 {
+				fileObj["sharedWith"] = sharedWithEmails
+			}
+		}
+
+		filesResponse = append(filesResponse, fileObj)
 	}
-	// createdAt sort is already handled by service (Order("created_at DESC"))
 
 	// Build response
 	totalPages := int(math.Ceil(float64(total) / float64(limit)))
 	response := gin.H{
-		"files": filteredFiles,
+		"files": filesResponse,
 		"pagination": gin.H{
 			"currentPage": page,
 			"totalPages":  totalPages,

@@ -120,3 +120,15 @@ CREATE TABLE download_history (
 CREATE INDEX idx_download_history_file_id ON download_history(file_id);  -- Get download history for a file
 CREATE INDEX idx_download_history_downloader_id ON download_history(downloader_id);  -- Get user's download history
 CREATE INDEX idx_download_history_downloaded_at ON download_history(downloaded_at DESC);  -- Sort by recency
+
+CREATE TABLE login_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    failed_attempts INT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_login_sessions_user_id ON login_sessions(user_id);
+CREATE INDEX idx_login_sessions_expires_at ON login_sessions(expires_at);
