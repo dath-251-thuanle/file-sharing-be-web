@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/admin"
@@ -116,10 +117,13 @@ func waitForShutdown() {
 func corsMiddleware(corsCfg *config.CORSConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
-		allowedOrigin := ""
+		var allowedOrigin string
+
 		if len(corsCfg.AllowedOrigins) > 0 {
 			for _, allowed := range corsCfg.AllowedOrigins {
-				if origin == allowed {
+				allowedTrimmed := strings.TrimSuffix(allowed, "/")
+				originTrimmed := strings.TrimSuffix(origin, "/")
+				if originTrimmed == allowedTrimmed {
 					allowedOrigin = origin
 					break
 				}
@@ -136,37 +140,35 @@ func corsMiddleware(corsCfg *config.CORSConfig) gin.HandlerFunc {
 
 		if allowedOrigin != "" {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-			
+
 			if corsCfg.AllowCredentials && allowedOrigin != "*" {
 				c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 		}
 
+		methods := "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 		if len(corsCfg.AllowedMethods) > 0 {
-			methods := ""
+			methods = ""
 			for i, method := range corsCfg.AllowedMethods {
 				if i > 0 {
 					methods += ", "
 				}
 				methods += method
 			}
-			c.Writer.Header().Set("Access-Control-Allow-Methods", methods)
-		} else {
-			c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		}
+		c.Writer.Header().Set("Access-Control-Allow-Methods", methods)
 
+		headers := "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, X-Cron-Secret"
 		if len(corsCfg.AllowedHeaders) > 0 {
-			headers := ""
+			headers = ""
 			for i, header := range corsCfg.AllowedHeaders {
 				if i > 0 {
 					headers += ", "
 				}
 				headers += header
 			}
-			c.Writer.Header().Set("Access-Control-Allow-Headers", headers)
-		} else {
-			c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, X-Cron-Secret")
 		}
+		c.Writer.Header().Set("Access-Control-Allow-Headers", headers)
 
 		if len(corsCfg.ExposeHeaders) > 0 {
 			exposeHeaders := ""
@@ -185,11 +187,11 @@ func corsMiddleware(corsCfg *config.CORSConfig) gin.HandlerFunc {
 			}
 		}
 
-		// Handle preflight requests
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
 		}
+
 		c.Next()
 	}
 }
