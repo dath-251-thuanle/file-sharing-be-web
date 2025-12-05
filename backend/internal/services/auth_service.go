@@ -1,11 +1,11 @@
 package services
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"image/png"
-	"bytes"
 	"time"
 
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/config"
@@ -16,6 +16,7 @@ import (
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 var (
@@ -24,6 +25,7 @@ var (
 	ErrTOTPNotEnabled       = errors.New("totp not enabled")
 	ErrInvalidTOTPCode      = errors.New("invalid totp code")
 	ErrTOTPSecretNotCreated = errors.New("totp secret not created")
+	ErrLoginSessionExpired  = errors.New("login session expired")
 )
 
 type TokenClaims struct {
@@ -36,8 +38,11 @@ type TokenClaims struct {
 }
 
 type AuthService struct {
-	userRepo repositories.UserRepository
-	cfg      *config.Config
+	userRepo             repositories.UserRepository
+	loginSessionRepo     repositories.LoginSessionRepository
+	cfg                  *config.Config
+	loginSessionTTL      time.Duration
+	maxTOTPFailedAttempt int
 }
 
 type TOTPSetup struct {
@@ -47,9 +52,23 @@ type TOTPSetup struct {
 
 func NewAuthService(repo repositories.UserRepository, cfg *config.Config) *AuthService {
 	return &AuthService{
-		userRepo: repo,
-		cfg:      cfg,
+		userRepo:             repo,
+		loginSessionRepo:     nil,
+		cfg:                  cfg,
+		loginSessionTTL:      5 * time.Minute,
+		maxTOTPFailedAttempt: 5,
 	}
+}
+
+// NewAuthServiceWithLoginSessions allows injecting a LoginSessionRepository for TOTP login flow.
+func NewAuthServiceWithLoginSessions(
+	userRepo repositories.UserRepository,
+	loginSessionRepo repositories.LoginSessionRepository,
+	cfg *config.Config,
+) *AuthService {
+	svc := NewAuthService(userRepo, cfg)
+	svc.loginSessionRepo = loginSessionRepo
+	return svc
 }
 
 func (s *AuthService) Register(username, email, password string) (*models.User, error) {
@@ -108,6 +127,18 @@ func (s *AuthService) Login(email, password string) (*models.User, bool, error) 
 	return user, totpEnabled, nil
 }
 
+
+func (s *AuthService) CreateLoginSession(userID uuid.UUID) (uuid.UUID, error) {
+	if s.loginSessionRepo == nil {
+		return uuid.Nil, fmt.Errorf("login session repository not configured")
+	}
+	session, err := s.loginSessionRepo.Create(userID, s.loginSessionTTL)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return session.ID, nil
+}
+
 func (s *AuthService) LoginWithTOTP(userID uuid.UUID, code string) (*models.User, error) {
 	user, err := s.userRepo.GetByID(userID)
 	if err != nil {
@@ -126,6 +157,47 @@ func (s *AuthService) LoginWithTOTP(userID uuid.UUID, code string) (*models.User
 
 	if !s.validateTOTP(*user.TOTPSecret, code) {
 		return nil, ErrInvalidTOTPCode
+	}
+
+	return user, nil
+}
+
+func (s *AuthService) LoginWithTOTPSession(cid uuid.UUID, code string) (*models.User, error) {
+	if s.loginSessionRepo == nil {
+		return nil, fmt.Errorf("login session repository not configured")
+	}
+
+	now := time.Now().UTC()
+	session, err := s.loginSessionRepo.GetActiveByID(cid, now)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrLoginSessionExpired
+		}
+		return nil, err
+	}
+
+	user, err := s.userRepo.GetByID(session.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrInvalidCredentials
+	}
+	if user.TOTPEnabled == nil || !*user.TOTPEnabled {
+		return nil, ErrTOTPNotEnabled
+	}
+	if user.TOTPSecret == nil {
+		return nil, ErrTOTPSecretNotCreated
+	}
+
+	// Validate TOTP
+	if !s.validateTOTP(*user.TOTPSecret, code) {
+		_ = s.loginSessionRepo.IncrementFailedAttempts(session.ID)
+		return nil, ErrInvalidTOTPCode
+	}
+
+	if err := s.loginSessionRepo.MarkConsumed(session.ID, now); err != nil {
+		return nil, err
 	}
 
 	return user, nil
@@ -226,7 +298,6 @@ func (s *AuthService) GetProfile(userID uuid.UUID) (*models.User, error) {
 	return s.userRepo.GetByID(userID)
 }
 
-// DisableTOTP disables TOTP for a user after verifying the TOTP code
 func (s *AuthService) DisableTOTP(userID uuid.UUID, code string) error {
 	user, err := s.userRepo.GetByID(userID)
 	if err != nil {
@@ -242,21 +313,15 @@ func (s *AuthService) DisableTOTP(userID uuid.UUID, code string) error {
 		return ErrTOTPSecretNotCreated
 	}
 
-	// Verify TOTP code before disabling
 	if !s.validateTOTP(*user.TOTPSecret, code) {
 		return ErrInvalidTOTPCode
 	}
 
-	// Disable TOTP
 	enabled := false
 	user.TOTPEnabled = &enabled
-	// Optionally clear the secret, but we keep it for potential re-enabling
 	return s.userRepo.Update(user)
 }
 
-// ChangePassword changes user password
-// If user has TOTP enabled, can use either oldPassword OR totpCode for verification
-// If user doesn't have TOTP, must use oldPassword
 func (s *AuthService) ChangePassword(userID uuid.UUID, oldPassword, totpCode, newPassword string) error {
 	if len(newPassword) < 8 {
 		return fmt.Errorf("password too short, minimum 8 characters required")
@@ -272,9 +337,7 @@ func (s *AuthService) ChangePassword(userID uuid.UUID, oldPassword, totpCode, ne
 
 	totpEnabled := user.TOTPEnabled != nil && *user.TOTPEnabled
 
-	// Verify identity: either old password or TOTP code
 	if totpEnabled && totpCode != "" {
-		// Use TOTP code for verification
 		if user.TOTPSecret == nil {
 			return ErrTOTPSecretNotCreated
 		}
@@ -282,7 +345,6 @@ func (s *AuthService) ChangePassword(userID uuid.UUID, oldPassword, totpCode, ne
 			return ErrInvalidTOTPCode
 		}
 	} else {
-		// Use old password for verification
 		if oldPassword == "" {
 			return fmt.Errorf("old password is required")
 		}
@@ -291,7 +353,6 @@ func (s *AuthService) ChangePassword(userID uuid.UUID, oldPassword, totpCode, ne
 		}
 	}
 
-	// Hash new password
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err

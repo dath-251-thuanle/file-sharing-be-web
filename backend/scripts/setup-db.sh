@@ -328,19 +328,7 @@ verify_setup() {
     
     if [ "$table_count" -gt 0 ]; then
         print_info "Found $table_count tables in database"
-        
-        # Check for demo data
-        user_count=$(run_as_postgres psql -d "${DB_NAME:-file_sharing_db}" -t -c "SELECT COUNT(*) FROM users;" | xargs)
-        file_count=$(run_as_postgres psql -d "${DB_NAME:-file_sharing_db}" -t -c "SELECT COUNT(*) FROM files;" | xargs)
-        
-        print_info "Users: $user_count"
-        print_info "Files: $file_count"
-        
-        if [ "$user_count" -gt 0 ] && [ "$file_count" -gt 0 ]; then
-            print_info "✓ Database setup completed successfully!"
-        else
-            print_warn "Database is set up but no demo data found"
-        fi
+        print_info "✓ Database schema is ready (no demo data is seeded by default)"
     else
         print_error "No tables found in database"
         exit 1
@@ -357,35 +345,9 @@ run_demo_queries() {
     fi
     
     echo
-    print_info "Demo queries available for testing database"
-    read -p "Do you want to run demo queries now? (y/n): " -n 1 -r
-    echo
-    
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        print_info "Running demo queries..."
-        
-        # Set PGPASSWORD environment variable for password authentication
-        export PGPASSWORD="${DB_PASSWORD}"
-        
-        if psql -h "${DB_HOST}" -U "${DB_USER}" -d "${DB_NAME}" -f "$demo_file" &>/dev/null; then
-            print_info "✓ Demo queries executed successfully!"
-            echo
-            print_info "You can now test these queries:"
-            print_info "  - List all users: SELECT username, email FROM users;"
-            print_info "  - List all files: SELECT file_name, visibility FROM files;"
-            print_info "  - File statistics: SELECT * FROM file_statistics;"
-        else
-            print_error "Failed to run demo queries"
-            print_info "You can run them manually:"
-            print_info "  psql -h ${DB_HOST} -U ${DB_USER} -d ${DB_NAME} -f $demo_file"
-        fi
-        
-        unset PGPASSWORD
-    else
-        print_info "Skipped demo queries"
-        print_info "You can run them later:"
-        print_info "  psql -h ${DB_HOST} -U ${DB_USER} -d ${DB_NAME} -f $demo_file"
-    fi
+    print_warn "Demo queries are deprecated and will not be executed automatically."
+    print_info "If you still want to use them, run manually:"
+    print_info "  psql -h ${DB_HOST} -U ${DB_USER} -d ${DB_NAME} -f $demo_file"
 }
 
 # Full setup (install, create DB, migrate)
@@ -402,7 +364,7 @@ setup_database() {
     check_migrate
     run_migrations up
     verify_setup
-    run_demo_queries
+    # Demo queries are no longer run automatically
     
     echo
     print_info "Setup complete! You can now:"

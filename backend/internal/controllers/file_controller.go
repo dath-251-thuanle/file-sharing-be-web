@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -104,19 +105,20 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 	}
 
 	if password != "" {
-		policy, err := getSystemPolicy(c.Request.Context(), fc.fileService)
-		if err == nil && len(password) < policy.RequirePasswordMinLength {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "Validation error",
-				"message": fmt.Sprintf("Password must have at least %d characters", policy.RequirePasswordMinLength),
+		// Validate password length against system policy
+		policy, err := fc.fileService.GetSystemPolicy(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Internal server error",
+				"message": "Failed to load system policy",
 			})
 			return
 		}
-		// Default minimum if policy not found
-		if len(password) < 8 {
+
+		if len(password) < policy.RequirePasswordMinLength {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":   "Validation error",
-				"message": "Password must have at least 8 characters",
+				"message": fmt.Sprintf("Password must have at least %d characters", policy.RequirePasswordMinLength),
 			})
 			return
 		}
@@ -169,6 +171,44 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 			"message": "availableFrom must be before availableTo and within allowed policy window",
 		})
 		return
+	}
+
+	// Additional validation against system policy when custom availability is provided
+	if availableFrom != nil || availableTo != nil {
+		policy, err := fc.fileService.GetSystemPolicy(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Internal server error",
+				"message": "Failed to load system policy",
+			})
+			return
+		}
+
+		now := time.Now().UTC()
+
+		// availableTo must not be in the past
+		if availableTo != nil && availableTo.Before(now) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Validation error",
+				"message": "availableTo cannot be in the past",
+			})
+			return
+		}
+
+		if availableFrom != nil && availableTo != nil {
+			duration := availableTo.Sub(*availableFrom)
+
+			minDuration := time.Duration(policy.MinValidityHours) * time.Hour
+			maxDuration := time.Duration(policy.MaxValidityDays) * 24 * time.Hour
+
+			if duration < minDuration || duration > maxDuration {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error":   "Validation error",
+					"message": "availableFrom must be before availableTo and within allowed policy window",
+				})
+				return
+			}
+		}
 	}
 
 	// Get Content-Type from header, or detect from file extension
@@ -258,6 +298,10 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 			})
 			return
 		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal server error",
+			"message": "Failed to retrieve file",
+		})
 		return
 	}
 
@@ -702,26 +746,9 @@ func getUserEmailFromContext(c *gin.Context) string {
 
 // getSystemPolicy retrieves system policy from database
 // Returns default policy if not found or on error
-func getSystemPolicy(ctx context.Context, fileService *services.FileService) (*SystemPolicy, error) {
-	// TODO: Add GetSystemPolicy method to FileService to access db
-	// For now, return default policy
-	// In production, this should query the database
-	return &SystemPolicy{
-		MaxFileSizeMB:            50,
-		MinValidityHours:         1,
-		MaxValidityDays:          30,
-		DefaultValidityDays:      7,
-		RequirePasswordMinLength: 8,
-	}, nil
-}
-
-// SystemPolicy represents system configuration
-type SystemPolicy struct {
-	MaxFileSizeMB            int
-	MinValidityHours         int
-	MaxValidityDays          int
-	DefaultValidityDays      int
-	RequirePasswordMinLength int
+func getSystemPolicy(ctx context.Context, fileService *services.FileService) (*models.SystemPolicy, error) {
+	// Deprecated: use FileService.GetSystemPolicy instead.
+	return fileService.GetSystemPolicy(ctx)
 }
 
 // detectContentType detects MIME type from file extension
@@ -897,7 +924,7 @@ func (fc *FileController) GetMyFiles(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	sortBy := c.DefaultQuery("sortBy", "createdAt")
-	order := c.DefaultQuery("order", "desc")
+	order := strings.ToLower(c.DefaultQuery("order", "desc"))
 
 	// Validate pagination
 	if page < 1 {
@@ -960,25 +987,101 @@ func (fc *FileController) GetMyFiles(c *gin.Context) {
 		"deletedFiles": deletedCount,
 	}
 
-	// Sort filtered files
+	// Sort filtered files theo sortBy/order giống docs
 	if sortBy == "fileName" {
-		// Simple string sort
-		for i := 0; i < len(filteredFiles)-1; i++ {
-			for j := i + 1; j < len(filteredFiles); j++ {
-				if order == "asc" && filteredFiles[i].FileName > filteredFiles[j].FileName {
-					filteredFiles[i], filteredFiles[j] = filteredFiles[j], filteredFiles[i]
-				} else if order == "desc" && filteredFiles[i].FileName < filteredFiles[j].FileName {
-					filteredFiles[i], filteredFiles[j] = filteredFiles[j], filteredFiles[i]
+		sort.Slice(filteredFiles, func(i, j int) bool {
+			nameI := strings.ToLower(filteredFiles[i].FileName)
+			nameJ := strings.ToLower(filteredFiles[j].FileName)
+			if order == "asc" {
+				return nameI < nameJ
+			}
+			return nameI > nameJ
+		})
+	} else if sortBy == "createdAt" {
+		sort.Slice(filteredFiles, func(i, j int) bool {
+			if order == "asc" {
+				return filteredFiles[i].CreatedAt.Before(filteredFiles[j].CreatedAt)
+			}
+			// Mặc định desc
+			return filteredFiles[i].CreatedAt.After(filteredFiles[j].CreatedAt)
+		})
+	}
+
+	// Build files response để khớp schema File (camelCase) trong OpenAPI
+	filesResponse := make([]gin.H, 0, len(filteredFiles))
+	for _, f := range filteredFiles {
+		fileStatus := f.GetStatus()
+
+		fileObj := gin.H{
+			"id":         f.ID,
+			"fileName":   f.FileName,
+			"shareToken": f.ShareToken,
+			"status":     fileStatus,
+			"createdAt":  f.CreatedAt,
+		}
+
+		if f.FileSize > 0 {
+			fileObj["fileSize"] = f.FileSize
+		}
+		if f.MimeType != nil {
+			fileObj["mimeType"] = *f.MimeType
+		}
+		if f.IsPublic != nil {
+			fileObj["isPublic"] = *f.IsPublic
+		}
+		if f.AvailableFrom != nil {
+			fileObj["availableFrom"] = f.AvailableFrom
+		}
+		if f.AvailableTo != nil {
+			fileObj["availableTo"] = f.AvailableTo
+
+			// Calculate hours remaining if active
+			if fileStatus == "active" {
+				hoursRemaining := time.Until(*f.AvailableTo).Hours()
+				if hoursRemaining > 0 {
+					fileObj["hoursRemaining"] = hoursRemaining
 				}
 			}
 		}
+
+		// Password protection indicator
+		hasPassword := false
+		if f.PasswordHash != nil {
+			trimmed := strings.TrimSpace(*f.PasswordHash)
+			hasPassword = trimmed != ""
+		}
+		fileObj["hasPassword"] = hasPassword
+
+		// Owner info
+		if f.Owner != nil {
+			fileObj["owner"] = gin.H{
+				"id":       f.Owner.ID,
+				"username": f.Owner.Username,
+				"email":    f.Owner.Email,
+				"role":     f.Owner.Role,
+			}
+		}
+
+		// sharedWith emails if loaded
+		if len(f.SharedWith) > 0 {
+			sharedWithEmails := make([]string, 0, len(f.SharedWith))
+			for _, sw := range f.SharedWith {
+				if sw.User.Email != "" {
+					sharedWithEmails = append(sharedWithEmails, sw.User.Email)
+				}
+			}
+			if len(sharedWithEmails) > 0 {
+				fileObj["sharedWith"] = sharedWithEmails
+			}
+		}
+
+		filesResponse = append(filesResponse, fileObj)
 	}
-	// createdAt sort is already handled by service (Order("created_at DESC"))
 
 	// Build response
 	totalPages := int(math.Ceil(float64(total) / float64(limit)))
 	response := gin.H{
-		"files": filteredFiles,
+		"files": filesResponse,
 		"pagination": gin.H{
 			"currentPage": page,
 			"totalPages":  totalPages,
