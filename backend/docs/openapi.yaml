@@ -154,7 +154,8 @@ paths:
                   value:
                     requireTOTP: true
                     message: TOTP verification required
-                    userId: 550e8400-e29b-41d4-a716-446655440000
+                    cid: 8d4f3bb1-2f52-4a76-b951-7c21ef991abc
+
         '401':
           description: Sai email hoặc password
           content:
@@ -190,7 +191,7 @@ paths:
               login:
                 summary: Xác thực TOTP khi đăng nhập
                 value:
-                  userId: 550e8400-e29b-41d4-a716-446655440000
+                  cid: 8d4f3bb1-2f52-4a76-b951-7c21ef991abc
                   code: "123456"
       responses:
         '200':
@@ -1485,23 +1486,21 @@ components:
         message:
           type: string
           example: TOTP verification required
-        userId:
+        cid:
           type: string
-          format: uuid
-          description: ID của user cần xác thực TOTP (dùng cho bước /auth/login/totp)
-          example: 550e8400-e29b-41d4-a716-446655440000
+          description: Challenge ID cho phiên đăng nhập TOTP
+          example: 8d4f3bb1-2f52-4a76-b951-7c21ef991abc
 
     TOTPVerifyRequest:
       type: object
       required:
-        - userId
+        - cid
         - code
       properties:
-        userId:
+        cid:
           type: string
-          format: uuid
-          description: ID của user nhận được từ bước /auth/login (requireTOTP=true)
-          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID của login session (cid) nhận từ bước /auth/login khi requireTOTP=true
+          example: 8d4f3bb1-2f52-4a76-b951-7c21ef991abc
         code:
           type: string
           pattern: '^\d{6}$'

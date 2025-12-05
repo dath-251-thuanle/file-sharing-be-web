@@ -317,11 +317,7 @@ function Test-Setup {
         Write-Info "Users: $userCount"
         Write-Info "Files: $fileCount"
         
-        if ($userCount -gt 0 -and $fileCount -gt 0) {
-            Write-Info "✓ Database setup completed successfully!"
-        } else {
-            Write-Warn "Database is set up but no demo data found"
-        }
+        Write-Info "✓ Database schema is ready (no demo data is seeded by default)"
     } else {
         Write-Error "No tables found in database"
         exit 1
@@ -338,45 +334,9 @@ function Invoke-DemoQueries {
     }
     
     Write-Host ""
-    Write-Info "Demo queries available for testing database"
-    $runDemo = Read-Host "Do you want to run demo queries now? (y/n)"
-    
-    if ($runDemo -eq "y" -or $runDemo -eq "Y") {
-        Write-Info "Running demo queries..."
-        
-        $dbHost = if ($env:DB_HOST) { $env:DB_HOST } else { "localhost" }
-        $dbUser = if ($env:DB_USER) { $env:DB_USER } else { "postgres" }
-        $dbName = if ($env:DB_NAME) { $env:DB_NAME } else { "file_sharing_db" }
-        
-        # Set PGPASSWORD environment variable for password authentication
-        $env:PGPASSWORD = $env:DB_PASSWORD
-        
-        try {
-            $result = & psql -h $dbHost -U $dbUser -d $dbName -f $demoFile 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                Write-Info "✓ Demo queries executed successfully!"
-                Write-Host ""
-                Write-Info "You can now test these queries:"
-                Write-Info "  - List all users: SELECT username, email FROM users;"
-                Write-Info "  - List all files: SELECT file_name, visibility FROM files;"
-                Write-Info "  - File statistics: SELECT * FROM file_statistics;"
-            } else {
-                Write-Error "Failed to run demo queries"
-                Write-Info "You can run them manually:"
-                Write-Info "  psql -h $dbHost -U $dbUser -d $dbName -f $demoFile"
-            }
-        } catch {
-            Write-Error "Failed to run demo queries: $_"
-            Write-Info "You can run them manually:"
-            Write-Info "  psql -h $dbHost -U $dbUser -d $dbName -f $demoFile"
-        } finally {
-            Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
-        }
-    } else {
-        Write-Info "Skipped demo queries"
-        Write-Info "You can run them later:"
-        Write-Info "  psql -h $dbHost -U $dbUser -d $dbName -f pkg/database/demo_queries.sql"
-    }
+    Write-Warn "Demo queries are deprecated and will not be executed automatically."
+    Write-Info "If you still want to use them, run manually:"
+    Write-Info "  psql -h localhost -U postgres -d file_sharing_db -f $demoFile"
 }
 
 # Full setup (create DB, migrate)
@@ -392,7 +352,7 @@ function Start-Setup {
     Test-Migrate
     Invoke-Migrations "up"
     Test-Setup
-    Invoke-DemoQueries
+    # Demo queries are no longer run automatically
     
     Write-Host ""
     $dbHost = if ($env:DB_HOST) { $env:DB_HOST } else { "localhost" }
