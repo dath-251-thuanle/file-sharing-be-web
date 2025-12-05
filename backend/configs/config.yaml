@@ -67,8 +67,13 @@ cors:
     - "PATCH"
     - "OPTIONS"
   allowed_headers:
+    - "Origin"
     - "Content-Type"
+    - "Content-Length"
+    - "Accept-Encoding"
+    - "X-CSRF-Token"
     - "Authorization"
+    - "X-Cron-Secret"
   expose_headers:
     - "Content-Length"
   allow_credentials: true

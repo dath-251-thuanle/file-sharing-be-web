@@ -31,8 +31,8 @@ type loginRequest struct {
 }
 
 type totpLoginRequest struct {
-	UserID string `json:"userId" binding:"required"`
-	Code   string `json:"code" binding:"required,len=6"`
+	CID  string `json:"cid" binding:"required"`
+	Code string `json:"code" binding:"required,len=6"`
 }
 
 type totpVerifyRequest struct {
@@ -92,12 +92,17 @@ func (a *AuthController) Login(c *gin.Context) {
 	}
 
 	if totpEnabled {
-		// For TOTP login, return a minimal response that does not expose email again.
-		// Frontend can use userId + 6-digit code for the second step.
+		// TOTP is enabled: create a short-lived login session identified by cid.
+		cid, err := a.authService.CreateLoginSession(user.ID)
+		if err != nil {
+			writeError(c, http.StatusInternalServerError, "Internal error", err.Error())
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"requireTOTP": true,
 			"message":     "TOTP verification required",
-			"userId":      user.ID,
+			"cid":         cid,
 		})
 		return
 	}
@@ -122,17 +127,20 @@ func (a *AuthController) LoginTOTP(c *gin.Context) {
 		return
 	}
 
-	userID, err := uuid.Parse(req.UserID)
+	cid, err := uuid.Parse(req.CID)
 	if err != nil {
-		writeError(c, http.StatusBadRequest, "Validation error", "Invalid userId format")
+		writeError(c, http.StatusBadRequest, "Validation error", "Invalid cid format")
 		return
 	}
 
-	user, err := a.authService.LoginWithTOTP(userID, req.Code)
+	user, err := a.authService.LoginWithTOTPSession(cid, req.Code)
 	if err != nil {
 		switch err {
 		case services.ErrInvalidCredentials, services.ErrInvalidTOTPCode, services.ErrTOTPNotEnabled, services.ErrTOTPSecretNotCreated:
 			writeError(c, http.StatusUnauthorized, "Unauthorized", "Invalid or expired TOTP code")
+			return
+		case services.ErrLoginSessionExpired:
+			writeError(c, http.StatusUnauthorized, "Unauthorized", "Login session expired. Please restart the login flow.")
 			return
 		default:
 			writeError(c, http.StatusInternalServerError, "Internal error", err.Error())

@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -183,6 +184,27 @@ func Load() (*Config, error) {
 	}
 	if jwtSecret := os.Getenv("JWT_SECRET"); jwtSecret != "" {
 		cfg.JWT.Secret = jwtSecret
+	}
+
+	// Add CORS environment variable overrides
+	if corsOrigins := os.Getenv("CORS_ALLOWED_ORIGINS"); corsOrigins != "" {
+		cfg.CORS.AllowedOrigins = strings.Split(corsOrigins, ",")
+		// Trim whitespace from each origin
+		for i, origin := range cfg.CORS.AllowedOrigins {
+			cfg.CORS.AllowedOrigins[i] = strings.TrimSpace(origin)
+		}
+	}
+	if corsMethods := os.Getenv("CORS_ALLOWED_METHODS"); corsMethods != "" {
+		cfg.CORS.AllowedMethods = strings.Split(corsMethods, ",")
+		for i, method := range cfg.CORS.AllowedMethods {
+			cfg.CORS.AllowedMethods[i] = strings.TrimSpace(method)
+		}
+	}
+	if corsHeaders := os.Getenv("CORS_ALLOWED_HEADERS"); corsHeaders != "" {
+		cfg.CORS.AllowedHeaders = strings.Split(corsHeaders, ",")
+		for i, header := range cfg.CORS.AllowedHeaders {
+			cfg.CORS.AllowedHeaders[i] = strings.TrimSpace(header)
+		}
 	}
 
 	// Override cloud storage settings from environment

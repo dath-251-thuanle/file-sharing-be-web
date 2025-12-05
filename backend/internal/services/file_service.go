@@ -30,6 +30,41 @@ func NewFileService(db *gorm.DB, st storage.Storage) *FileService {
 	}
 }
 
+func (s *FileService) GetSystemPolicy(ctx context.Context) (*models.SystemPolicy, error) {
+	var policy models.SystemPolicy
+	if err := s.db.WithContext(ctx).First(&policy, 1).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &models.SystemPolicy{
+				ID:                       1,
+				MaxFileSizeMB:            50,
+				MinValidityHours:         1,
+				MaxValidityDays:          30,
+				DefaultValidityDays:      7,
+				RequirePasswordMinLength: 8,
+			}, nil
+		}
+		return nil, err
+	}
+
+	if policy.MaxFileSizeMB <= 0 {
+		policy.MaxFileSizeMB = 50
+	}
+	if policy.MinValidityHours <= 0 {
+		policy.MinValidityHours = 1
+	}
+	if policy.MaxValidityDays <= 0 {
+		policy.MaxValidityDays = 30
+	}
+	if policy.DefaultValidityDays <= 0 {
+		policy.DefaultValidityDays = 7
+	}
+	if policy.RequirePasswordMinLength < 4 {
+		policy.RequirePasswordMinLength = 8
+	}
+
+	return &policy, nil
+}
+
 type UploadInput struct {
 	FileName      string
 	ContentType   string
@@ -69,7 +104,6 @@ func (s *FileService) UploadFile(ctx context.Context, input *UploadInput) (*mode
 		return nil, fmt.Errorf("file service: storage backend is not configured")
 	}
 	isPrivate := input.IsPublic != nil && !*input.IsPublic
-	// Anonymous users cannot upload private files
 	if isPrivate && input.OwnerID == nil {
 		return nil, fmt.Errorf("anonymous private uploads require authentication")
 	}

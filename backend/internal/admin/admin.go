@@ -24,6 +24,14 @@ var (
 	token_mutex         sync.RWMutex
 )
 
+var (
+	cleanupRateMutex            sync.Mutex
+	cleanupWindowStart          time.Time
+	cleanupRequestCount         int
+	cleanupWindowDuration       = time.Minute
+	cleanupMaxRequestsPerWindow = 10
+)
+
 //########################
 //## 0. SETUP MODULE   ###
 //########################
@@ -49,16 +57,78 @@ func Setup(router *gin.Engine, db *gorm.DB, store storage.Storage) {
 //########################
 func admin_auth_middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		path := c.FullPath()
+		if path == "" {
+			path = c.Request.URL.Path
+		}
+
 		authHeader := c.GetHeader("Authorization")
+		cronSecretHeader := c.GetHeader("X-Cron-Secret")
+		envSecret := os.Getenv("CLEANUP_SECRET")
+
+		// Special auth logic for /admin/cleanup:
+		// - Allow either valid admin token OR valid X-Cron-Secret (docs: "hoặc").
+		if strings.HasPrefix(path, "/admin/cleanup") {
+			// 1. Try admin Bearer token path if provided
+			if authHeader != "" {
+				parts := strings.SplitN(authHeader, " ", 2)
+				if len(parts) == 2 && parts[0] == "Bearer" {
+					token_mutex.RLock()
+					validToken := current_admin_token
+					token_mutex.RUnlock()
+
+					if parts[1] == validToken {
+						c.Set("adminAuth", "token")
+						c.Next()
+						return
+					}
+				}
+				// Authorization header provided but invalid token
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"error":   "Forbidden",
+					"message": "You don't have permission to perform cleanup",
+				})
+				return
+			}
+
+			// 2. Fallback: Cron secret header
+			if cronSecretHeader != "" {
+				if cronSecretHeader == envSecret && envSecret != "" {
+					c.Set("adminAuth", "cron")
+					c.Next()
+					return
+				}
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"error":   "Forbidden",
+					"message": "Invalid cron secret",
+				})
+				return
+			}
+
+			// 3. Neither token nor secret header provided 
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error":   "Unauthorized",
+				"message": "X-Cron-Secret header is required",
+			})
+			return
+		}
+
+		// Default admin auth for other /admin endpoints: require Bearer token
 		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Missing Authorization header"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error":   "Unauthorized",
+				"message": "Bearer token is required",
+			})
 			return
 		}
 
 		// Format: "Bearer <token>"
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token format. Use 'Bearer <token>'"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error":   "Unauthorized",
+				"message": "Invalid token format. Use 'Bearer <token>'",
+			})
 			return
 		}
 
@@ -67,10 +137,14 @@ func admin_auth_middleware() gin.HandlerFunc {
 		token_mutex.RUnlock()
 
 		if parts[1] != validToken {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired admin token"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error":   "Unauthorized",
+				"message": "Invalid or expired admin token",
+			})
 			return
 		}
 
+		c.Set("adminAuth", "token")
 		c.Next()
 	}
 }
@@ -100,7 +174,6 @@ func generate_new_token() {
 	current_admin_token = newToken
 	token_mutex.Unlock()
 
-	// PRINT TO CONSOLE so you can copy-paste it
 	fmt.Println("\n=======================================================")
 	fmt.Printf("[Admin] NEW ACCESS TOKEN (Valid 5 mins): %s\n", newToken)
 	fmt.Println("=======================================================")
@@ -112,9 +185,11 @@ func generate_new_token() {
 func get_policy(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var policy models.SystemPolicy
-		// ID 1 is the singleton configuration
 		if err := db.First(&policy, 1).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Policy not found", "details": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Internal error",
+				"message": "Policy not found",
+			})
 			return
 		}
 		c.JSON(http.StatusOK, policy)
@@ -126,22 +201,130 @@ func get_policy(db *gorm.DB) gin.HandlerFunc {
 //########################
 func update_policy(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var input models.SystemPolicy
+		type policyUpdateRequest struct {
+			MaxFileSizeMB            *int `json:"maxFileSizeMB"`
+			MinValidityHours         *int `json:"minValidityHours"`
+			MaxValidityDays          *int `json:"maxValidityDays"`
+			DefaultValidityDays      *int `json:"defaultValidityDays"`
+			RequirePasswordMinLength *int `json:"requirePasswordMinLength"`
+		}
+
+		var input policyUpdateRequest
 		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Validation error",
+				"message": "Invalid input data",
+			})
 			return
 		}
 
-		// Update fields provided in JSON (ignoring zero values)
-		if err := db.Model(&models.SystemPolicy{ID: 1}).Updates(input).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Update failed"})
+		// Get current policy to validate relationships between fields if needed
+		var current models.SystemPolicy
+		if err := db.First(&current, 1).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Internal error",
+				"message": "Policy not found",
+			})
 			return
 		}
 
-		// Return fresh state
+		// Minimum value according to SystemPolicyUpdate in docs
+		if input.MaxFileSizeMB != nil && *input.MaxFileSizeMB < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Validation error",
+				"message": "maxFileSizeMB must be greater than or equal to 1",
+			})
+			return
+		}
+		if input.MinValidityHours != nil && *input.MinValidityHours < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Validation error",
+				"message": "minValidityHours must be greater than or equal to 1",
+			})
+			return
+		}
+		if input.MaxValidityDays != nil && *input.MaxValidityDays < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Validation error",
+				"message": "maxValidityDays must be greater than or equal to 1",
+			})
+			return
+		}
+		if input.DefaultValidityDays != nil && *input.DefaultValidityDays < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Validation error",
+				"message": "defaultValidityDays must be greater than or equal to 1",
+			})
+			return
+		}
+		if input.RequirePasswordMinLength != nil && *input.RequirePasswordMinLength < 4 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Validation error",
+				"message": "requirePasswordMinLength must be greater than or equal to 4",
+			})
+			return
+		}
+
+		// Validate relationship maxValidityDays >= minValidityHours (according to docs)
+		// Use new value if provided, otherwise use current
+		minHours := current.MinValidityHours
+		maxDays := current.MaxValidityDays
+		if input.MinValidityHours != nil {
+			minHours = *input.MinValidityHours
+		}
+		if input.MaxValidityDays != nil {
+			maxDays = *input.MaxValidityDays
+		}
+		if maxDays < minHours {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Validation error",
+				"message": "maxValidityDays must be greater than or equal to minValidityHours",
+			})
+			return
+		}
+
+		// Build map only with fields sent (partial update)
+		updates := map[string]interface{}{}
+		if input.MaxFileSizeMB != nil {
+			updates["max_file_size_mb"] = *input.MaxFileSizeMB
+		}
+		if input.MinValidityHours != nil {
+			updates["min_validity_hours"] = *input.MinValidityHours
+		}
+		if input.MaxValidityDays != nil {
+			updates["max_validity_days"] = *input.MaxValidityDays
+		}
+		if input.DefaultValidityDays != nil {
+			updates["default_validity_days"] = *input.DefaultValidityDays
+		}
+		if input.RequirePasswordMinLength != nil {
+			updates["require_password_min_length"] = *input.RequirePasswordMinLength
+		}
+
+		if len(updates) == 0 {
+			// No fields provided for update
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Validation error",
+				"message": "No fields provided for update",
+			})
+			return
+		}
+
+		if err := db.Model(&models.SystemPolicy{ID: 1}).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Internal error",
+				"message": "Update failed",
+			})
+			return
+		}
+
+		// Return fresh policy
 		var updated models.SystemPolicy
 		db.First(&updated, 1)
-		c.JSON(http.StatusOK, gin.H{"message": "Policy updated", "policy": updated})
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Policy updated",
+			"policy":  updated,
+		})
 	}
 }
 
@@ -150,55 +333,69 @@ func update_policy(db *gorm.DB) gin.HandlerFunc {
 //########################
 func cleanup_files(db *gorm.DB, store storage.Storage) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Verify X-Cron-Secret (Second layer of security for automated jobs)
-		secret := c.GetHeader("X-Cron-Secret")
-		envSecret := os.Getenv("CLEANUP_SECRET")
-		
-		// If calling manually with Bearer token, we might skip this check,
-		// but let's keep it strict: You need BOTH Bearer (Authentication) AND Secret (Authorization for this action)
-		if secret == "" || secret != envSecret {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid or missing X-Cron-Secret"})
+		// Rate limiting: avoid DOS on /admin/cleanup endpoint
+		if !allowCleanupRequest() {
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":   "Too many requests",
+				"message": "Cleanup endpoint is rate limited. Please try again later.",
+			})
 			return
 		}
+
+		startTime := time.Now().UTC()
 
 		var expiredFiles []models.File
 		if err := db.Where("available_to < ?", time.Now()).Find(&expiredFiles).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database query failed"})
-			return
-		}
-
-		if len(expiredFiles) == 0 {
-			c.JSON(http.StatusOK, gin.H{"message": "No files to clean"})
+			log.Printf("[AdminCleanup] error querying expired files: %v (ip=%s)", err, c.ClientIP())
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Internal error",
+				"message": "Database query failed",
+			})
 			return
 		}
 
 		deletedCount := 0
 		for _, file := range expiredFiles {
-			// Determine container (Public vs Private)
+			// Determine container (public vs private)
 			container := storage.ContainerPrivate
 			if file.IsPublic != nil && *file.IsPublic {
 				container = storage.ContainerPublic
 			}
 
-			// Delete from Storage
+			// Delete from storage
 			location := &storage.Location{
 				Container: container,
 				Path:      file.FilePath,
 			}
 			err := store.Delete(c.Request.Context(), location)
 
-			// Delete from DB (Hard delete)
+			// Delete from DB (hard delete)
 			if err == nil {
 				if err := db.Delete(&file).Error; err == nil {
 					deletedCount++
 				}
+			} else {
+				log.Printf("[AdminCleanup] failed to delete file from storage (id=%s, path=%s): %v", file.ID, file.FilePath, err)
 			}
 		}
 
+		timestamp := startTime.Format(time.RFC3339)
+
+		// Audit log (timestamp, source, result)
+		authType, _ := c.Get("adminAuth")
+		log.Printf(
+			"[AdminCleanup] ts=%s ip=%s auth=%v files_found=%d files_deleted=%d",
+			timestamp,
+			c.ClientIP(),
+			authType,
+			len(expiredFiles),
+			deletedCount,
+		)
+
 		c.JSON(http.StatusOK, gin.H{
-			"message":       "Cleanup complete",
-			"files_found":   len(expiredFiles),
-			"files_deleted": deletedCount,
+			"message":      "Expired files removed",
+			"deletedFiles": deletedCount,
+			"timestamp":    timestamp,
 		})
 	}
 }
@@ -221,4 +418,23 @@ func ensure_policy_exists(db *gorm.DB) {
 		}
 		db.Create(&defaultPolicy)
 	}
+}
+
+func allowCleanupRequest() bool {
+	cleanupRateMutex.Lock()
+	defer cleanupRateMutex.Unlock()
+
+	now := time.Now()
+	if cleanupWindowStart.IsZero() || now.Sub(cleanupWindowStart) > cleanupWindowDuration {
+		// Reset window (time window for rate limiting)
+		cleanupWindowStart = now
+		cleanupRequestCount = 0
+	}
+
+	if cleanupRequestCount >= cleanupMaxRequestsPerWindow {
+		return false
+	}
+
+	cleanupRequestCount++
+	return true
 }
