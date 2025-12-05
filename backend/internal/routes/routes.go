@@ -12,25 +12,26 @@ func SetupRoutes(
 	authController *controllers.AuthController,
 	authMiddleware gin.HandlerFunc,
 ) {
-	// Health check endpoint
+	// Health check endpoint (no /api prefix for health checks)
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	api := router.Group("/")
+	// API routes group with /api prefix
+	api := router.Group("/api")
 
-	// Auth routes: /auth/*
+	// Auth routes: /api/auth/*
 	authGroup := api.Group("/auth")
 	RegisterAuthRoutes(authGroup, authController, authMiddleware)
 
-	// User profile route: /user
+	// User profile route: /api/user
 	userGroup := api.Group("/user")
 	userGroup.Use(authMiddleware)
 	{
 		userGroup.GET("", authController.Profile)
 	}
 
-	// File routes: /files/*
+	// File routes: /api/files/*
 	filesGroup := api.Group("/files")
 	RegisterFileRoutes(filesGroup, fileController, authMiddleware)
 }
