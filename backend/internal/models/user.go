@@ -24,16 +24,13 @@ type User struct {
 	TOTPEnabled  *bool     `gorm:"default:false" json:"totp_enabled"`
 	CreatedAt    time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
 
-	// Relationships
-	OwnedFiles  []File       `gorm:"foreignKey:OwnerID" json:"-"`
-	SharedFiles []SharedWith `gorm:"foreignKey:UserID" json:"-"`
+	OwnedFiles []File `gorm:"foreignKey:OwnerID" json:"-"`
 }
 
 func (User) TableName() string {
 	return "users"
 }
 
-// BeforeCreate hook to generate UUID
 func (u *User) BeforeCreate(tx *gorm.DB) error {
 	if u.ID == uuid.Nil {
 		u.ID = uuid.New()

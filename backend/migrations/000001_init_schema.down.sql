@@ -2,7 +2,6 @@
 DROP TABLE IF EXISTS login_sessions;
 DROP TABLE IF EXISTS download_history;
 DROP TABLE IF EXISTS file_statistics;
-DROP TABLE IF EXISTS shared_with;
 DROP TABLE IF EXISTS files;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS system_policy;

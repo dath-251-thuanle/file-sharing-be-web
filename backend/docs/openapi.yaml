@@ -6,7 +6,7 @@ info:
     - Upload file và tạo link chia sẻ
     - Thiết lập quyền truy cập (public/password-protected/private)
     - Thời gian hiệu lực linh hoạt (from/to)
-    - Bảo vệ bằng mật khẩu hoặc TOTP
+    - Bảo vệ bằng mật khẩu
     - Chia sẻ với danh sách người dùng cụ thể
     - Tự động xóa file hết hạn
   version: 1.0.0
@@ -427,9 +427,18 @@ paths:
                       id: 550e8400-e29b-41d4-a716-446655440000
                       fileName: report.pdf
                       shareToken: a1b2c3d4e5f6g7h8
-                    totpSetup:
-                      secret: NB2W45DFOIZA====
-                      qrCode: data:image/png;base64,iVBORw0KGgo...
+                      isPublic: false
+                successWithWhitelist:
+                  summary: Upload thành công với whitelist
+                  value:
+                    success: true
+                    message: File uploaded successfully
+                    file:
+                      id: 550e8400-e29b-41d4-a716-446655440000
+                      fileName: report.pdf
+                      shareToken: a1b2c3d4e5f6g7h8
+                      isPublic: false
+                      sharedWith: ["user1@example.com", "user2@example.com"]
         '400':
           description: Thiếu file hoặc vi phạm validation (password quá ngắn, cấu hình thời gian không hợp lệ, ... )
           content:
@@ -611,7 +620,6 @@ paths:
                       shareLink: https://example.com/f/a1b2c3d4e5f6g7h8
                       isPublic: false
                       hasPassword: true
-                      totpEnabled: true
                       availableFrom: "2025-11-10T00:00:00Z"
                       availableTo: "2025-11-17T00:00:00Z"
                       status: active

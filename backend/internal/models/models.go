@@ -9,7 +9,6 @@ func AllModels() []interface{} {
 	return []interface{}{
 		&User{},
 		&File{},
-		&SharedWith{},
 		&LoginSession{},
 		&SystemPolicy{},
 		&FileStatistics{},
