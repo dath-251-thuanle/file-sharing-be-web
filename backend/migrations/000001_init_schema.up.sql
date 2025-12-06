@@ -44,7 +44,7 @@ CREATE TABLE files (
     
     -- Access control
     is_public BOOLEAN DEFAULT TRUE,            -- Public files: anyone with link can access
-                                               -- Private files: only owner and shared_with users
+                                               -- Private files: only owner and users in shared_with_emails whitelist
     password_hash VARCHAR(255),                -- Optional password protection (bcrypt hash)
     
     -- Availability window
@@ -53,6 +53,9 @@ CREATE TABLE files (
     
     -- Metadata
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Whitelist (multi-valued attribute)
+    shared_with_emails JSONB DEFAULT '[]'::jsonb,  -- List of emails with access (whitelist)
     
     -- Constraints
     CONSTRAINT chk_available_dates CHECK (
@@ -70,21 +73,7 @@ CREATE INDEX idx_files_owner ON files(owner_id);
 CREATE INDEX idx_files_share_token ON files(share_token);
 CREATE INDEX idx_files_created_at ON files(created_at);
 CREATE INDEX idx_files_availability ON files(available_from, available_to);
-
--- Create shared_with table
--- Many-to-many relationship: which users have access to which private files
--- API endpoint: POST /files/:id/share (owner shares file with specific users)
-CREATE TABLE shared_with (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    
-    UNIQUE(file_id, user_id)  -- Prevent duplicate sharing
-);
-
--- Create indexes for shared_with
-CREATE INDEX idx_shared_with_file ON shared_with(file_id);  -- Find all users for a file
-CREATE INDEX idx_shared_with_user ON shared_with(user_id);  -- Find all files shared with user
+CREATE INDEX idx_files_shared_emails ON files USING GIN (shared_with_emails);  -- Index for JSONB queries
 
 -- Create system_policy table
 -- System-wide configuration (admin can update via API)

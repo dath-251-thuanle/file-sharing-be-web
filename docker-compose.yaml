@@ -1,0 +1,268 @@
+# Unified Docker Compose for Backend + Frontend + Nginx
+# Usage:
+#   Development: docker compose --profile dev up -d
+#   Production:  docker compose --profile prod up -d
+
+services:
+  # ==================== DATABASE ====================
+  postgres:
+    image: postgres:15-alpine
+    container_name: file-sharing-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-file_sharing_db}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/pkg/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==================== DATABASE MIGRATIONS ====================
+  migrate:
+    image: migrate/migrate:latest
+    container_name: file-sharing-migrate
+    volumes:
+      - ./backend/migrations:/migrations
+    env_file:
+      - ./backend/.env
+    environment:
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-file_sharing_db}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+    networks:
+      - app-network
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      set -e
+      echo "Running migrations with database: $${DB_HOST}:$${DB_PORT}/$${DB_NAME}"
+      echo "Waiting for database connection..."
+      for i in 1 2 3 4 5 6 7 8 9 10; do
+        if migrate -path /migrations -database "postgres://$${DB_USER}:$${DB_PASSWORD}@$${DB_HOST}:$${DB_PORT}/$${DB_NAME}?sslmode=$${DB_SSLMODE}" version > /dev/null 2>&1; then
+          echo "Database is ready!"
+          break
+        fi
+        echo "Attempt $${i}/10: Database not ready, waiting 2 seconds..."
+        sleep 2
+      done
+      echo "Running migrations..."
+      migrate -path /migrations -database "postgres://$${DB_USER}:$${DB_PASSWORD}@$${DB_HOST}:$${DB_PORT}/$${DB_NAME}?sslmode=$${DB_SSLMODE}" up
+    restart: "no"
+
+  # ==================== BACKEND - DEVELOPMENT ====================
+  app-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: file-sharing-app-dev
+    env_file:
+      - ./backend/.env
+    environment:
+      - APP_ENV=development
+      - APP_PORT=8080
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-file_sharing_db}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+      - RUN_DB_MIGRATIONS=${RUN_DB_MIGRATIONS:-true}
+      - MIGRATIONS_PATH=${MIGRATIONS_PATH:-migrations}
+      - JWT_SECRET=${JWT_SECRET:-dev_secret_key_minimum_32_characters_long}
+      - STORAGE_PATH=/app/storage/uploads
+      - CLOUD_STORAGE_ENABLED=${CLOUD_STORAGE_ENABLED:-true}
+      - CLOUD_STORAGE_PROVIDER=${CLOUD_STORAGE_PROVIDER:-azure}
+      - CLOUD_STORAGE_ENDPOINT=${CLOUD_STORAGE_ENDPOINT:-https://dathhcmut20251.blob.core.windows.net}
+      - CLOUD_STORAGE_ACCESS_KEY=${CLOUD_STORAGE_ACCESS_KEY:-dathhcmut20251}
+      - CLOUD_STORAGE_SECRET_KEY=${CLOUD_STORAGE_SECRET_KEY}
+      - CLOUD_STORAGE_PUBLIC_CONTAINER=${CLOUD_STORAGE_PUBLIC_CONTAINER:-public-file}
+      - CLOUD_STORAGE_PRIVATE_CONTAINER=${CLOUD_STORAGE_PRIVATE_CONTAINER:-private-file}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost,http://localhost:3000,http://localhost:80,http://localhost:8080,https://your-domain.com}
+      - CORS_ALLOWED_METHODS=${CORS_ALLOWED_METHODS:-GET,POST,PUT,DELETE,PATCH,OPTIONS}
+      - CORS_ALLOWED_HEADERS=${CORS_ALLOWED_HEADERS:-Origin,Content-Type,Content-Length,Accept-Encoding,X-CSRF-Token,Authorization,X-Cron-Secret}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app
+      - app_storage:/app/storage/uploads
+      - go_modules:/go/pkg/mod
+    networks:
+      - app-network
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - dev
+
+  # ==================== BACKEND - PRODUCTION ====================
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: file-sharing-app
+    env_file:
+      - ./backend/.env
+    environment:
+      - APP_ENV=production
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-file_sharing_db}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+      - RUN_DB_MIGRATIONS=${RUN_DB_MIGRATIONS:-true}
+      - MIGRATIONS_PATH=${MIGRATIONS_PATH:-migrations}
+      - JWT_SECRET=${JWT_SECRET}
+      - CLOUD_STORAGE_ENABLED=true
+      - CLOUD_STORAGE_PROVIDER=azure
+      - CLOUD_STORAGE_ENDPOINT=${CLOUD_STORAGE_ENDPOINT}
+      - CLOUD_STORAGE_ACCESS_KEY=${CLOUD_STORAGE_ACCESS_KEY}
+      - CLOUD_STORAGE_SECRET_KEY=${CLOUD_STORAGE_SECRET_KEY}
+      - CLOUD_STORAGE_PUBLIC_CONTAINER=${CLOUD_STORAGE_PUBLIC_CONTAINER:-public-file}
+      - CLOUD_STORAGE_PRIVATE_CONTAINER=${CLOUD_STORAGE_PRIVATE_CONTAINER:-private-file}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost,http://localhost:3000,http://localhost:80,http://localhost:8080,https://your-domain.com}
+      - CORS_ALLOWED_METHODS=${CORS_ALLOWED_METHODS:-GET,POST,PUT,DELETE,PATCH,OPTIONS}
+      - CORS_ALLOWED_HEADERS=${CORS_ALLOWED_HEADERS:-Origin,Content-Type,Content-Length,Accept-Encoding,X-CSRF-Token,Authorization,X-Cron-Secret}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    volumes:
+      - app_storage:/app/storage/uploads
+    networks:
+      - app-network
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - prod
+
+  # ==================== FRONTEND - DEVELOPMENT ====================
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: frontend.Dockerfile.dev
+    container_name: file-sharing-frontend-dev
+    environment:
+      - NEXT_PUBLIC_API_URL=
+      - NODE_ENV=development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    networks:
+      - app-network
+    restart: unless-stopped
+    profiles:
+      - dev
+
+  # ==================== FRONTEND - PRODUCTION ====================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: frontend.Dockerfile
+    container_name: file-sharing-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=
+      - NODE_ENV=production
+    networks:
+      - app-network
+    restart: unless-stopped
+    profiles:
+      - prod
+
+  # ==================== NGINX REVERSE PROXY - DEVELOPMENT ====================
+  nginx-dev:
+    image: nginx:alpine
+    container_name: file-sharing-nginx-dev
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      app-dev:
+        condition: service_started
+      frontend-dev:
+        condition: service_started
+    networks:
+      - app-network
+    restart: unless-stopped
+    profiles:
+      - dev
+
+  # ==================== NGINX REVERSE PROXY - PRODUCTION ====================
+  nginx:
+    image: nginx:alpine
+    container_name: file-sharing-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+      - frontend
+    networks:
+      - app-network
+    restart: unless-stopped
+    profiles:
+      - prod
+
+  # ==================== ADMINER (Database Management) ====================
+  adminer:
+    image: adminer:latest
+    container_name: file-sharing-adminer
+    ports:
+      - "8081:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      - postgres
+    networks:
+      - app-network
+    restart: unless-stopped
+    profiles:
+      - dev
+      - tools
+
+volumes:
+  postgres_data:
+    driver: local
+  app_storage:
+    driver: local
+  go_modules:
+    driver: local
+  frontend_node_modules:
+    driver: local
+  frontend_next:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge

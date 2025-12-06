@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -220,7 +219,7 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 	}
 
 	// Check file size against system policy
-	policy, err := getSystemPolicy(c.Request.Context(), fc.fileService)
+	policy, err := fc.fileService.GetSystemPolicy(c.Request.Context())
 	if err == nil {
 		maxSizeBytes := int64(policy.MaxFileSizeMB) * 1024 * 1024
 		if fileHeader.Size > maxSizeBytes {
@@ -232,16 +231,21 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 		}
 	}
 
+	// Save sharedWithEmails before passing to service (to use in response)
+	requestSharedWithEmails := make([]string, len(sharedWithEmails))
+	copy(requestSharedWithEmails, sharedWithEmails)
+
 	uploadInput := &services.UploadInput{
-		FileName:      fileHeader.Filename,
-		ContentType:   contentType,
-		Size:          fileHeader.Size,
-		Reader:        file,
-		IsPublic:      &isPublic,
-		OwnerID:       currentUserID,
-		PasswordHash:  passwordHash,
-		AvailableFrom: availableFrom,
-		AvailableTo:   availableTo,
+		FileName:         fileHeader.Filename,
+		ContentType:      contentType,
+		Size:             fileHeader.Size,
+		Reader:           file,
+		IsPublic:         &isPublic,
+		OwnerID:          currentUserID,
+		PasswordHash:     passwordHash,
+		AvailableFrom:    availableFrom,
+		AvailableTo:      availableTo,
+		SharedWithEmails: sharedWithEmails,
 	}
 
 	storedFile, err := fc.fileService.UploadFile(c.Request.Context(), uploadInput)
@@ -268,14 +272,7 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 		return
 	}
 
-	// Add sharedWith users if provided
-	if len(sharedWithEmails) > 0 && currentUserID != nil {
-		if err := fc.fileService.AddSharedWithUsers(c.Request.Context(), storedFile.ID, currentUserID, sharedWithEmails); err != nil {
-			// Log error but don't fail the upload
-			fmt.Printf("Warning: Failed to add sharedWith users: %v\n", err)
-		}
-	}
-
+	// Build response with file information
 	response := gin.H{
 		"success": true,
 		"message": "File uploaded successfully",
@@ -285,6 +282,14 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 			"shareToken": storedFile.ShareToken,
 			"isPublic":   storedFile.IsPublic,
 		},
+	}
+
+	// Extract sharedWith emails from the file (JSONB column)
+	sharedWithEmailsResponse := extractSharedWithEmails(storedFile)
+	
+	// Add to response if we have emails
+	if len(sharedWithEmailsResponse) > 0 {
+		response["file"].(gin.H)["sharedWith"] = sharedWithEmailsResponse
 	}
 
 	c.JSON(http.StatusCreated, response)
@@ -323,10 +328,7 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 		return
 	}
 
-	hasPassword := file.PasswordHash != nil && 
-		*file.PasswordHash != "" && 
-		len(*file.PasswordHash) >= 60 && 
-		strings.HasPrefix(*file.PasswordHash, "$2")
+	hasPassword := file.HasPassword()
 
 	currentUserID := getUserIDFromContext(c)
 	isOwner := currentUserID != nil && file.OwnerID != nil && *currentUserID == *file.OwnerID
@@ -342,14 +344,9 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 		},
 	}
 
-	if isOwner && len(file.SharedWith) > 0 {
-		sharedWithEmails := make([]string, 0, len(file.SharedWith))
-		for _, sw := range file.SharedWith {
-			// Exclude owner from sharedWith list (owner is not a shared user)
-			if sw.User.Email != "" && (file.OwnerID == nil || sw.UserID != *file.OwnerID) {
-				sharedWithEmails = append(sharedWithEmails, sw.User.Email)
-			}
-		}
+	// Add sharedWith if owner (using helper function for consistency)
+	if isOwner {
+		sharedWithEmails := extractSharedWithEmails(file)
 		if len(sharedWithEmails) > 0 {
 			response["file"].(gin.H)["sharedWith"] = sharedWithEmails
 		}
@@ -447,22 +444,13 @@ func (fc *FileController) GetFileByID(c *gin.Context) {
 		}
 	}
 
-	hasPassword := file.PasswordHash != nil && 
-		*file.PasswordHash != "" && 
-		len(*file.PasswordHash) >= 60 && 
-		strings.HasPrefix(*file.PasswordHash, "$2")
+	hasPassword := file.HasPassword()
 	response["file"].(gin.H)["hasPassword"] = hasPassword
 
-	if len(file.SharedWith) > 0 {
-		sharedWithEmails := make([]string, 0, len(file.SharedWith))
-		for _, sw := range file.SharedWith {
-			if sw.User.Email != "" && (file.OwnerID == nil || sw.UserID != *file.OwnerID) {
-				sharedWithEmails = append(sharedWithEmails, sw.User.Email)
-			}
-		}
-		if len(sharedWithEmails) > 0 {
-			response["file"].(gin.H)["sharedWith"] = sharedWithEmails
-		}
+	// Add sharedWith using the same helper function for consistency
+	sharedWithEmails := extractSharedWithEmails(file)
+	if len(sharedWithEmails) > 0 {
+		response["file"].(gin.H)["sharedWith"] = sharedWithEmails
 	}
 
 	if file.Owner != nil {
@@ -600,8 +588,8 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 		return
 	}
 
-	// Security check 2: Whitelist (sharedWith)
-	if len(file.SharedWith) > 0 {
+	// Security check 2: Whitelist (sharedWithEmails)
+	if len(file.SharedWithEmails) > 0 {
 		if currentUserID == nil || currentUserEmail == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error":   "Unauthorized",
@@ -611,8 +599,8 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 		}
 
 		isWhitelisted := false
-		for _, shared := range file.SharedWith {
-			if shared.User.Email != "" && strings.EqualFold(shared.User.Email, currentUserEmail) {
+		for _, email := range file.SharedWithEmails {
+			if strings.EqualFold(email, currentUserEmail) {
 				isWhitelisted = true
 				break
 			}
@@ -709,6 +697,14 @@ func containerFromFile(file *models.File) storage.ContainerType {
 		return storage.ContainerPublic
 	}
 	return storage.ContainerPrivate
+}
+
+// extractSharedWithEmails extracts email list from file.SharedWithEmails (JSONB column)
+func extractSharedWithEmails(file *models.File) []string {
+	if file == nil || len(file.SharedWithEmails) == 0 {
+		return []string{}
+	}
+	return []string(file.SharedWithEmails)
 }
 
 func getUserIDFromContext(c *gin.Context) *uuid.UUID {
@@ -1016,10 +1012,7 @@ func (fc *FileController) GetMyFiles(c *gin.Context) {
 		}
 
 		// Password protection indicator
-		hasPassword := f.PasswordHash != nil && 
-			*f.PasswordHash != "" && 
-			len(*f.PasswordHash) >= 60 && 
-			strings.HasPrefix(*f.PasswordHash, "$2")
+		hasPassword := f.HasPassword()
 		fileObj["hasPassword"] = hasPassword
 
 		// Owner info
@@ -1032,18 +1025,10 @@ func (fc *FileController) GetMyFiles(c *gin.Context) {
 			}
 		}
 
-		// sharedWith emails if loaded - exclude owner
-		if len(f.SharedWith) > 0 {
-			sharedWithEmails := make([]string, 0, len(f.SharedWith))
-			for _, sw := range f.SharedWith {
-				// Exclude owner from sharedWith list (owner is not a shared user)
-				if sw.User.Email != "" && (f.OwnerID == nil || sw.UserID != *f.OwnerID) {
-					sharedWithEmails = append(sharedWithEmails, sw.User.Email)
-				}
-			}
-			if len(sharedWithEmails) > 0 {
-				fileObj["sharedWith"] = sharedWithEmails
-			}
+		// sharedWith emails if loaded - use helper function for consistency
+		sharedWithEmails := extractSharedWithEmails(&f)
+		if len(sharedWithEmails) > 0 {
+			fileObj["sharedWith"] = sharedWithEmails
 		}
 
 		filesResponse = append(filesResponse, fileObj)
