@@ -106,8 +106,7 @@ Project sử dụng **OpenAPI 3.0.4** để định nghĩa API:
 | Table                | Description               | Key Features                     |
 | -------------------- | ------------------------- | -------------------------------- |
 | `users`            | User accounts             | TOTP support, roles (user/admin) |
-| `files`            | Uploaded files metadata   | Share tokens, password, validity |
-| `shared_with`      | File sharing whitelist    | Many-to-many: files ↔ users     |
+| `files`            | Uploaded files metadata   | Share tokens, password, validity, shared_with_emails (JSONB) |
 | `file_statistics`  | Aggregated download stats | Download count, unique users     |
 | `download_history` | Detailed download log     | Audit trail, anonymous support   |
 | `system_policy`    | System configuration      | File size limits, validity rules |

@@ -194,8 +194,7 @@ Database schema được định nghĩa trong `database/schema.sql`:
 ### Tables:
 
 - `users` - User accounts với TOTP 2FA
-- `files` - File metadata với validity period
-- `shared_with` - Many-to-many relationship (files ↔ users)
+- `files` - File metadata với validity period (includes `shared_with_emails` JSONB column for whitelist)
 - `system_policy` - Global configuration (singleton)
 
 ### Key Features:
