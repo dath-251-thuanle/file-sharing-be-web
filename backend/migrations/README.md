@@ -50,8 +50,8 @@ make help
 
 | Version | Description                                      | Files                                                              |
 | ------- | ------------------------------------------------ | ------------------------------------------------------------------ |
-| 000001  | Initial schema (users, files, shared_with, etc.) | `000001_init_schema.up.sql`, `000001_init_schema.down.sql`     |
-| 000002  | Demo data (3 users, 6 files)                     | `000002_add_demo_data.up.sql`, `000002_add_demo_data.down.sql` |
+| 000001  | Initial schema (users, files, etc.)             | `000001_init_schema.up.sql`, `000001_init_schema.down.sql`     |
+| 000002  | Remove shared_with table (migrated to JSONB)     | `000002_remove_shared_with_table.up.sql`, `000002_remove_shared_with_table.down.sql` |
 
 **Current schema version:** 2
 

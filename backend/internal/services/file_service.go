@@ -66,15 +66,16 @@ func (s *FileService) GetSystemPolicy(ctx context.Context) (*models.SystemPolicy
 }
 
 type UploadInput struct {
-	FileName      string
-	ContentType   string
-	Size          int64
-	Reader        io.Reader
-	IsPublic      *bool
-	OwnerID       *uuid.UUID
-	PasswordHash  *string
-	AvailableFrom *time.Time
-	AvailableTo   *time.Time
+	FileName         string
+	ContentType      string
+	Size             int64
+	Reader           io.Reader
+	IsPublic         *bool
+	OwnerID          *uuid.UUID
+	PasswordHash     *string
+	AvailableFrom    *time.Time
+	AvailableTo      *time.Time
+	SharedWithEmails []string
 }
 
 func (in *UploadInput) container() storage.ContainerType {
@@ -141,77 +142,53 @@ func (s *FileService) UploadFile(ctx context.Context, input *UploadInput) (*mode
 		AvailableTo:   availableTo,
 	}
 
+	// Normalize sharedWith emails and exclude owner's email
+	var sharedWithEmails []string
+	if len(input.SharedWithEmails) > 0 && input.OwnerID != nil {
+		// Get owner email to exclude from sharedWith
+		var ownerEmail string
+		if input.OwnerID != nil {
+			var owner models.User
+			if err := s.db.WithContext(ctx).First(&owner, "id = ?", *input.OwnerID).Error; err == nil {
+				ownerEmail = owner.Email
+			}
+		}
+
+		// Normalize and filter emails
+		for _, email := range input.SharedWithEmails {
+			email = strings.TrimSpace(email)
+			if email != "" {
+				// Skip owner's email (owner has access via owner_id)
+				if ownerEmail == "" || !strings.EqualFold(email, ownerEmail) {
+					sharedWithEmails = append(sharedWithEmails, email)
+				}
+			}
+		}
+	}
+
+	// Set sharedWithEmails directly to file (JSONB column)
+	file.SharedWithEmails = models.StringArray(sharedWithEmails)
+
 	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(file).Error; err != nil {
+		// Create file with SharedWithEmails (JSONB column)
+		if err := tx.Omit("Owner", "Statistics").Create(file).Error; err != nil {
 			return err
 		}
 
-		if isPrivate && input.OwnerID != nil {
-			sharedWith := &models.SharedWith{
-				FileID: file.ID,
-				UserID: *input.OwnerID,
-			}
-			if err := tx.Create(sharedWith).Error; err != nil {
-				return err
-			}
-		}
-
-		return tx.First(file, "id = ?", file.ID).Error
+		// Preload Owner
+		return tx.Preload("Owner").First(file, "id = ?", file.ID).Error
 	})
 	if txErr != nil {
 		_ = s.storage.Delete(ctx, loc)
 		return nil, txErr
 	}
 
+	// Reload file with Owner
+	if err := s.db.Preload("Owner").First(file, "id = ?", file.ID).Error; err != nil {
+		return nil, err
+	}
+
 	return file, nil
-}
-
-// AddSharedWithUsers adds users to shared_with table by their emails
-func (s *FileService) AddSharedWithUsers(ctx context.Context, fileID uuid.UUID, ownerID *uuid.UUID, emails []string) error {
-	if len(emails) == 0 {
-		return nil
-	}
-
-	// Normalize emails (trim and lowercase)
-	normalizedEmails := make([]string, 0, len(emails))
-	for _, email := range emails {
-		email = strings.TrimSpace(strings.ToLower(email))
-		if email != "" {
-			normalizedEmails = append(normalizedEmails, email)
-		}
-	}
-
-	if len(normalizedEmails) == 0 {
-		return nil
-	}
-
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Find users by email
-		var users []models.User
-		if err := tx.Where("LOWER(email) IN ?", normalizedEmails).Find(&users).Error; err != nil {
-			return err
-		}
-
-		// Create shared_with records (excluding owner)
-		for _, user := range users {
-			// Skip if this is the owner
-			if ownerID != nil && user.ID == *ownerID {
-				continue
-			}
-
-			sharedWith := &models.SharedWith{
-				FileID: fileID,
-				UserID: user.ID,
-			}
-			// Use Create with OnConflict to handle duplicates gracefully
-			if err := tx.Where("file_id = ? AND user_id = ?", fileID, user.ID).
-				FirstOrCreate(sharedWith).Error; err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
 }
 
 func optionalString(val string) *string {
@@ -265,8 +242,7 @@ func (s *FileService) defaultValidityDays(ctx context.Context) (int, error) {
 
 func (s *FileService) GetByID(id uuid.UUID) (*models.File, error) {
 	var file models.File
-	err := s.db.Preload("Owner").Preload("Statistics").Preload("SharedWith.User").
-		First(&file, "id = ?", id).Error
+	err := s.db.Preload("Owner").Preload("Statistics").First(&file, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -275,8 +251,7 @@ func (s *FileService) GetByID(id uuid.UUID) (*models.File, error) {
 
 func (s *FileService) GetByShareToken(token string) (*models.File, error) {
 	var file models.File
-	err := s.db.Preload("Owner").Preload("Statistics").Preload("SharedWith.User").
-		Where("share_token = ?", token).First(&file).Error
+	err := s.db.Preload("Owner").Preload("Statistics").Where("share_token = ?", token).First(&file).Error
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +293,7 @@ func (s *FileService) GetByOwnerID(ownerID uuid.UUID, limit, offset int) ([]mode
 		return nil, 0, err
 	}
 
-	err := query.Preload("Statistics").
+	err := query.Preload("Owner").Preload("Statistics").
 		Order("created_at DESC").
 		Limit(limit).
 		Offset(offset).

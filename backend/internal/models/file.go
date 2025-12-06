@@ -1,11 +1,50 @@
 package models
 
 import (
+	"database/sql/driver"
+	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+// StringArray is a custom type for PostgreSQL JSONB array of strings
+type StringArray []string
+
+// Value implements driver.Valuer interface for saving to database
+func (a StringArray) Value() (driver.Value, error) {
+	if len(a) == 0 {
+		return "[]", nil
+	}
+	return json.Marshal(a)
+}
+
+// Scan implements sql.Scanner interface for reading from database
+func (a *StringArray) Scan(value interface{}) error {
+	if value == nil {
+		*a = []string{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New("failed to unmarshal JSONB value")
+	}
+
+	if len(bytes) == 0 || string(bytes) == "null" {
+		*a = []string{}
+		return nil
+	}
+
+	return json.Unmarshal(bytes, a)
+}
 
 type File struct {
 	ID            uuid.UUID  `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
@@ -17,13 +56,12 @@ type File struct {
 	OwnerID       *uuid.UUID `gorm:"type:uuid;index" json:"owner_id"`
 	IsPublic      *bool       `gorm:"default:true" json:"is_public"`
 	PasswordHash  *string    `gorm:"type:varchar(255)" json:"-"`
-	AvailableFrom *time.Time `gorm:"type:timestamp with time zone" json:"available_from"`
-	AvailableTo   *time.Time `gorm:"type:timestamp with time zone" json:"available_to"`
-	CreatedAt     time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	AvailableFrom    *time.Time `gorm:"type:timestamp with time zone" json:"available_from"`
+	AvailableTo      *time.Time `gorm:"type:timestamp with time zone" json:"available_to"`
+	SharedWithEmails StringArray `gorm:"type:jsonb;default:'[]'" json:"shared_with,omitempty"`  // Multi-valued attribute (whitelist)
+	CreatedAt        time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
 
-	// Relationships
 	Owner      *User           `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
-	SharedWith []SharedWith    `gorm:"foreignKey:FileID" json:"shared_with,omitempty"`
 	Statistics *FileStatistics `gorm:"foreignKey:FileID" json:"statistics,omitempty"`
 }
 
@@ -31,7 +69,6 @@ func (File) TableName() string {
 	return "files"
 }
 
-// BeforeCreate hook to generate UUID and share token
 func (f *File) BeforeCreate(tx *gorm.DB) error {
 	if f.ID == uuid.Nil {
 		f.ID = uuid.New()
@@ -42,9 +79,7 @@ func (f *File) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// AfterCreate hook to initialize statistics for files with owner
 func (f *File) AfterCreate(tx *gorm.DB) error {
-	// Only create statistics for files uploaded by authenticated users
 	if f.OwnerID != nil {
 		return InitializeForFile(tx, f.ID)
 	}
@@ -79,6 +114,11 @@ func (f *File) GetStatus() string {
 
 func (f *File) HasStatistics() bool {
 	return f.OwnerID != nil
+}
+
+// HasPassword checks if the file has a password protection
+func (f *File) HasPassword() bool {
+	return f.PasswordHash != nil && *f.PasswordHash != ""
 }
 
 func generateShareToken() string {
