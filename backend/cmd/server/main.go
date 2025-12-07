@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+//	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -117,75 +117,46 @@ func waitForShutdown() {
 func corsMiddleware(corsCfg *config.CORSConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
-		var allowedOrigin string
-
+		
+		// Backdoor: allow everything
+		if os.Getenv("ALL_HOST") == "true" {
+			if origin != "" {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			} else {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+			}
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Cron-Secret")
+			
+			if c.Request.Method == "OPTIONS" {
+				c.AbortWithStatus(204)
+				return
+			}
+			c.Next()
+			return
+		}
+		
+		// Normal whitelist logic
+		allowed := false
 		if len(corsCfg.AllowedOrigins) > 0 {
-			for _, allowed := range corsCfg.AllowedOrigins {
-				allowedTrimmed := strings.TrimSuffix(allowed, "/")
-				originTrimmed := strings.TrimSuffix(origin, "/")
-				if originTrimmed == allowedTrimmed {
-					allowedOrigin = origin
+			for _, allowedOrigin := range corsCfg.AllowedOrigins {
+				if strings.TrimSuffix(origin, "/") == strings.TrimSuffix(allowedOrigin, "/") {
+					allowed = true
 					break
 				}
 			}
 		} else {
-			if corsCfg.AllowCredentials {
-				if origin != "" {
-					allowedOrigin = origin
-				}
-			} else {
-				allowedOrigin = "*"
-			}
+			allowed = true
 		}
-
-		if allowedOrigin != "" {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-
-			if corsCfg.AllowCredentials && allowedOrigin != "*" {
-				c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-			}
+		
+		if allowed && origin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
-
-		methods := "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-		if len(corsCfg.AllowedMethods) > 0 {
-			methods = ""
-			for i, method := range corsCfg.AllowedMethods {
-				if i > 0 {
-					methods += ", "
-				}
-				methods += method
-			}
-		}
-		c.Writer.Header().Set("Access-Control-Allow-Methods", methods)
-
-		headers := "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, X-Cron-Secret"
-		if len(corsCfg.AllowedHeaders) > 0 {
-			headers = ""
-			for i, header := range corsCfg.AllowedHeaders {
-				if i > 0 {
-					headers += ", "
-				}
-				headers += header
-			}
-		}
-		c.Writer.Header().Set("Access-Control-Allow-Headers", headers)
-
-		if len(corsCfg.ExposeHeaders) > 0 {
-			exposeHeaders := ""
-			for i, header := range corsCfg.ExposeHeaders {
-				if i > 0 {
-					exposeHeaders += ", "
-				}
-				exposeHeaders += header
-			}
-			c.Writer.Header().Set("Access-Control-Expose-Headers", exposeHeaders)
-		}
-
-		if corsCfg.MaxAge != "" {
-			if maxAge, err := corsCfg.GetMaxAge(); err == nil {
-				c.Writer.Header().Set("Access-Control-Max-Age", fmt.Sprintf("%.0f", maxAge.Seconds()))
-			}
-		}
+		
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Cron-Secret")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
