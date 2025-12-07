@@ -74,7 +74,7 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 		isPublicStrLower := strings.ToLower(strings.TrimSpace(isPublicStr))
 		isPublic = (isPublicStrLower == "true" || isPublicStrLower == "1" || isPublicStrLower == "yes")
 	}
-	password := c.PostForm("password")
+	password := c.PostForm("passwordHash")
 	availableFromStr := c.PostForm("availableFrom")
 	availableToStr := c.PostForm("availableTo")
 	sharedWithEmails := c.PostFormArray("sharedWith")
@@ -588,41 +588,41 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 		return
 	}
 
-	// Security check 2: Whitelist (sharedWithEmails)
 	if len(file.SharedWithEmails) > 0 {
-		if currentUserID == nil || currentUserEmail == "" {
+		if isOwner {
+		} else if currentUserID != nil && currentUserEmail != "" {
+			isWhitelisted := false
+			for _, email := range file.SharedWithEmails {
+				if strings.EqualFold(email, currentUserEmail) {
+					isWhitelisted = true
+					break
+				}
+			}
+
+			if !isWhitelisted {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":   "Access denied",
+					"message": "You are not allowed to download this file. Your email is not in the shared list",
+				})
+				return
+			}
+		} else {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error":   "Unauthorized",
 				"message": "This file requires authentication. Please provide a Bearer token",
 			})
 			return
 		}
-
-		isWhitelisted := false
-		for _, email := range file.SharedWithEmails {
-			if strings.EqualFold(email, currentUserEmail) {
-				isWhitelisted = true
-				break
-			}
-		}
-
-		if !isWhitelisted && !isOwner {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error":   "Access denied",
-				"message": "You are not allowed to download this file. Your email is not in the shared list",
-			})
-			return
-		}
 	}
 
-	// Security check 3: Password verification
-	if file.PasswordHash != nil && *file.PasswordHash != "" && !isOwner {
+	// Security check 3: Password protection (owner can bypass)
+	if file.HasPassword() && !isOwner {
 		password := strings.TrimSpace(c.GetHeader("X-File-Password"))
 
 		if password == "" {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":   "Password required",
-				"message": "This file is password-protected. Please provide the password via X-File-Password header",
+				"message": "This file is password-protected",
 			})
 			return
 		}
