@@ -1,5 +1,0 @@
-creation_rules:
-  - path_regex: dev\.enc$
-    age: ["age1dm03jy0ydwkpgqx8xl0ges3myvxvau5vwfyx5htsn90v47g43yaqgs9ykz"]
-  - path_regex: prod\.enc$
-    age: ["age1dm03jy0ydwkpgqx8xl0ges3myvxvau5vwfyx5htsn90v47g43yaqgs9ykz"]
