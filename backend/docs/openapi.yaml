@@ -999,8 +999,10 @@ paths:
       description: |
         Lấy metadata cơ bản của file qua share token (public endpoint, không cần authentication).
         
-        **Response chỉ trả về thông tin cơ bản:**
-        - `id`, `fileName`, `shareToken`, `status`, `isPublic`, `hasPassword`
+        **Response trả về thông tin cơ bản:**
+        - `id`, `fileName`, `shareToken`, `status`, `isPublic`, `hasPassword`, `fileSize`, `mimeType`
+        
+        **Lưu ý:** `sharedWith` (whitelist) không được trả về ở endpoint này - chỉ có trong `/files/info/{id}` dành cho owner.
       security: []
       parameters:
         - $ref: '#/components/parameters/ShareToken'
@@ -1022,6 +1024,8 @@ paths:
                       status: active
                       isPublic: false
                       hasPassword: true
+                      fileSize: 2048576
+                      mimeType: application/pdf
                 noPassword:
                   summary: File không có password
                   value:
@@ -1032,6 +1036,8 @@ paths:
                       status: active
                       isPublic: true
                       hasPassword: false
+                      fileSize: 1024000
+                      mimeType: application/pdf
         '404':
           description: Không tìm thấy file với shareToken
           content:
@@ -1249,7 +1255,7 @@ paths:
                   summary: Thiếu hoặc sai ADMIN_API_TOKEN
                   value:
                     error: Unauthorized
-                    message: Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)
+                    message: "Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)"
                 invalidToken:
                   summary: Token không hợp lệ
                   value:
@@ -1322,7 +1328,7 @@ paths:
                   summary: Thiếu Authorization header
                   value:
                     error: Unauthorized
-                    message: Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)
+                    message: "Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)"
                 invalidToken:
                   summary: Token không hợp lệ
                   value:
@@ -1402,7 +1408,7 @@ paths:
                   summary: Thiếu Authorization header
                   value:
                     error: Unauthorized
-                    message: Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)
+                    message: "Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)"
                 invalidToken:
                   summary: Token không hợp lệ
                   value:

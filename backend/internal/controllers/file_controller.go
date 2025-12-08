@@ -297,7 +297,6 @@ func (fc *FileController) UploadFile(c *gin.Context) {
 
 // GetFileInfo returns basic file metadata without downloading (public endpoint)
 // GET /files/:shareToken
-// Only returns minimal information: id, fileName, shareToken, status, isPublic, hasPassword
 func (fc *FileController) GetFileInfo(c *gin.Context) {
 	shareToken := c.Param("shareToken")
 
@@ -330,9 +329,6 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 
 	hasPassword := file.HasPassword()
 
-	currentUserID := getUserIDFromContext(c)
-	isOwner := currentUserID != nil && file.OwnerID != nil && *currentUserID == *file.OwnerID
-
 	response := gin.H{
 		"file": gin.H{
 			"id":         file.ID,
@@ -344,12 +340,11 @@ func (fc *FileController) GetFileInfo(c *gin.Context) {
 		},
 	}
 
-	// Add sharedWith if owner (using helper function for consistency)
-	if isOwner {
-		sharedWithEmails := extractSharedWithEmails(file)
-		if len(sharedWithEmails) > 0 {
-			response["file"].(gin.H)["sharedWith"] = sharedWithEmails
-		}
+	if file.FileSize > 0 {
+		response["file"].(gin.H)["fileSize"] = file.FileSize
+	}
+	if file.MimeType != nil && *file.MimeType != "" {
+		response["file"].(gin.H)["mimeType"] = *file.MimeType
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -416,7 +411,6 @@ func (fc *FileController) GetFileByID(c *gin.Context) {
 			"id":         file.ID,
 			"fileName":   file.FileName,
 			"fileSize":   file.FileSize,
-			"mimeType":   file.MimeType,
 			"shareToken": file.ShareToken,
 			"status":     status,
 			"isPublic":   file.IsPublic,
@@ -424,7 +418,14 @@ func (fc *FileController) GetFileByID(c *gin.Context) {
 		},
 	}
 
-	// Add share link
+	// Add mimeType (handle pointer)
+	if file.MimeType != nil {
+		response["file"].(gin.H)["mimeType"] = *file.MimeType
+	} else {
+		response["file"].(gin.H)["mimeType"] = nil
+	}
+
+	// Add share link (always include if shareToken exists)
 	if file.ShareToken != "" {
 		response["file"].(gin.H)["shareLink"] = fmt.Sprintf("/f/%s", file.ShareToken)
 	}
@@ -444,15 +445,15 @@ func (fc *FileController) GetFileByID(c *gin.Context) {
 		}
 	}
 
+	// Add password protection indicator
 	hasPassword := file.HasPassword()
 	response["file"].(gin.H)["hasPassword"] = hasPassword
 
-	// Add sharedWith using the same helper function for consistency
+	// Add sharedWith - always include (empty array if none)
 	sharedWithEmails := extractSharedWithEmails(file)
-	if len(sharedWithEmails) > 0 {
-		response["file"].(gin.H)["sharedWith"] = sharedWithEmails
-	}
+	response["file"].(gin.H)["sharedWith"] = sharedWithEmails
 
+	// Add owner info if available
 	if file.Owner != nil {
 		response["file"].(gin.H)["owner"] = gin.H{
 			"id":       file.Owner.ID,
