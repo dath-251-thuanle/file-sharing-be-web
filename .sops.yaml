@@ -1,0 +1,9 @@
+# .sops.yaml
+creation_rules:
+  - path_regex: dev\.enc$
+    age: >-
+      age1f82xyvaq0jdpvfk60e37husqzskla5s3cve8kmrwhetswtqff4uqcmdxre
+  
+  - path_regex: prod\.enc$
+    age: >-
+      age1f82xyvaq0jdpvfk60e37husqzskla5s3cve8kmrwhetswtqff4uqcmdxre
