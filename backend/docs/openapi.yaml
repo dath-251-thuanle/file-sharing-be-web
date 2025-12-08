@@ -1199,7 +1199,9 @@ paths:
       summary: Xóa file hết hạn
       description: |
         Xóa file hết hạn (Cron job hoặc Admin endpoint).
-        Yêu cầu X-Cron-Secret header hoặc admin token.
+        **Xác thực:**
+        - Cần **Authorization: Bearer <ADMIN_API_TOKEN>** (giá trị lấy từ biến môi trường `ADMIN_API_TOKEN`)
+        - Hoặc **X-Cron-Secret: <CLEANUP_SECRET>** cho cron nội bộ
         
         **Security best practices:**
         - `X-Cron-Secret` phải được lưu trong môi trường bảo mật, hỗ trợ rotation định kỳ (ví dụ đổi secret hàng tuần/tháng).
@@ -1232,7 +1234,7 @@ paths:
                     deletedFiles: 12
                     timestamp: "2025-11-19T10:00:00Z"
         '401':
-          description: Thiếu hoặc sai Bearer token / X-Cron-Secret
+          description: Thiếu hoặc sai ADMIN_API_TOKEN / X-Cron-Secret
           content:
             application/json:
               schema:
@@ -1243,13 +1245,18 @@ paths:
                   value:
                     error: Unauthorized
                     message: X-Cron-Secret header is required
+                invalidAdminToken:
+                  summary: Thiếu hoặc sai ADMIN_API_TOKEN
+                  value:
+                    error: Unauthorized
+                    message: Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)
                 invalidToken:
                   summary: Token không hợp lệ
                   value:
                     error: Unauthorized
                     message: Invalid or expired admin token
         '403':
-          description: Không phải admin hoặc secret sai
+          description: Secret sai hoặc token sai
           content:
             application/json:
               schema:
@@ -1283,7 +1290,10 @@ paths:
       tags:
         - Admin
       summary: Lấy cấu hình hệ thống
-      description: Lấy system policy (chỉ admin)
+      description: |
+        Lấy system policy (admin).
+
+        **Xác thực:** gửi header `Authorization: Bearer <ADMIN_API_TOKEN>` (ADMIN_API_TOKEN lấy từ biến môi trường backend; không dùng access token user).
       responses:
         '200':
           description: System policy
@@ -1302,7 +1312,7 @@ paths:
                     defaultValidityDays: 7
                     requirePasswordMinLength: 8
         '401':
-          description: Thiếu hoặc sai Bearer token
+          description: Thiếu hoặc sai ADMIN_API_TOKEN
           content:
             application/json:
               schema:
@@ -1312,16 +1322,21 @@ paths:
                   summary: Thiếu Authorization header
                   value:
                     error: Unauthorized
-                    message: Bearer token is required
+                    message: Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)
+                invalidToken:
+                  summary: Token không hợp lệ
+                  value:
+                    error: Unauthorized
+                    message: Invalid or expired admin token
         '403':
-          description: Không phải admin
+          description: Token sai
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
                 notAdmin:
-                  summary: User không có quyền admin
+                  summary: Admin token không hợp lệ
                   value:
                     error: Forbidden
                     message: You don't have permission to access this resource
@@ -1330,7 +1345,10 @@ paths:
       tags:
         - Admin
       summary: Cập nhật cấu hình hệ thống
-      description: Cập nhật system policy (chỉ admin)
+      description: |
+        Cập nhật system policy (admin).
+
+        **Xác thực:** gửi header `Authorization: Bearer <ADMIN_API_TOKEN>` (ADMIN_API_TOKEN lấy từ biến môi trường backend; không dùng access token user).
       requestBody:
         required: true
         content:
@@ -1374,7 +1392,7 @@ paths:
                     error: Validation error
                     message: maxValidityDays must be greater than or equal to minValidityHours
         '401':
-          description: Thiếu hoặc sai Bearer token
+          description: Thiếu hoặc sai ADMIN_API_TOKEN
           content:
             application/json:
               schema:
@@ -1384,16 +1402,21 @@ paths:
                   summary: Thiếu Authorization header
                   value:
                     error: Unauthorized
-                    message: Bearer token is required
+                    message: Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)
+                invalidToken:
+                  summary: Token không hợp lệ
+                  value:
+                    error: Unauthorized
+                    message: Invalid or expired admin token
         '403':
-          description: Không phải admin
+          description: Token sai
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
                 notAdmin:
-                  summary: User không có quyền admin
+                  summary: Admin token không hợp lệ
                   value:
                     error: Forbidden
                     message: You don't have permission to access this resource
@@ -1404,7 +1427,9 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT token từ /auth/login
+      description: |
+        JWT token từ /auth/login (cho user endpoints).
+        Với admin endpoints, gửi `Authorization: Bearer <ADMIN_API_TOKEN>` (lấy từ biến môi trường backend, không phải access token user).
 
     CronSecret:
       type: apiKey

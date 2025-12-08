@@ -31,8 +31,7 @@ func Setup(router *gin.Engine, db *gorm.DB, store storage.Storage) {
 	// 1. Ensure DB has default policy
 	ensure_policy_exists(db)
 
-	// 2. Register Routes with Auth Middleware
-	admin := router.Group("/admin")
+	admin := router.Group("/api/admin")
 	admin.Use(admin_auth_middleware())
 	{
 		admin.GET("/policy", get_policy(db))

@@ -57,8 +57,7 @@ Xem hướng dẫn chi tiết tại [`backend/SETUP_WITH_DOCKER.md`](./backend/S
 ## 📚 Documentation & Reports
 
 - Toàn bộ source code, tài liệu kỹ thuật và báo cáo cần được cập nhật trong repo này.
-- Thư mục `docs/` chứa API spec (OpenAPI, Swagger), báo cáo kỹ thuật phụ trợ, biểu đồ…  
-  Ghi chú chi tiết từng file/danh mục nên được duy trì trong chính thư mục này.
+- Thư mục `docs/` chứa API spec (OpenAPI, Swagger), báo cáo kỹ thuật phụ trợ, biểu đồ…Ghi chú chi tiết từng file/danh mục nên được duy trì trong chính thư mục này.
 - Thư mục `reports/` (nếu có) dùng cho báo cáo cuối kỳ/slide. Nếu chưa tồn tại hãy tạo và commit cùng README mô tả nội dung.
 - Khi bổ sung tài liệu mới hãy update cả README này hoặc file hướng dẫn phù hợp để người khác dễ tìm.
 
@@ -202,7 +201,6 @@ Database schema được định nghĩa trong `database/schema.sql`:
 - UUID primary keys
 - Citext cho email/username (case-insensitive)
 - Bcrypt password hashing
-- TOTP secret storage
 - File validity period với constraints
 - Indexes cho performance
 

@@ -206,6 +206,18 @@ func Load() (*Config, error) {
 			cfg.CORS.AllowedHeaders[i] = strings.TrimSpace(header)
 		}
 	}
+	if corsExposeHeaders := os.Getenv("CORS_EXPOSE_HEADERS"); corsExposeHeaders != "" {
+		cfg.CORS.ExposeHeaders = strings.Split(corsExposeHeaders, ",")
+		for i, header := range cfg.CORS.ExposeHeaders {
+			cfg.CORS.ExposeHeaders[i] = strings.TrimSpace(header)
+		}
+	}
+	if corsAllowCredentials := os.Getenv("CORS_ALLOW_CREDENTIALS"); corsAllowCredentials != "" {
+		cfg.CORS.AllowCredentials = corsAllowCredentials == "true" || corsAllowCredentials == "1"
+	}
+	if corsMaxAge := os.Getenv("CORS_MAX_AGE"); corsMaxAge != "" {
+		cfg.CORS.MaxAge = corsMaxAge
+	}
 
 	// Override cloud storage settings from environment
 	if enabled := os.Getenv("CLOUD_STORAGE_ENABLED"); enabled != "" {

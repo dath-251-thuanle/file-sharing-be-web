@@ -1,0 +1,89 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+LICENSE
+README.md
+CONTRIBUTING.md
+
+# CI/CD
+.github
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment files (will be set in Azure)
+.env
+.env.*
+!.env.azure.example
+
+# Logs
+*.log
+logs/
+
+# Testing
+*_test.go
+tests/
+coverage.out
+coverage.html
+
+# Build artifacts
+bin/
+dist/
+tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node modules (will be installed in build)
+node_modules/
+frontend/node_modules/
+
+# Next.js build (will be built in container)
+frontend/.next/
+frontend/out/
+
+# Go vendor (will be downloaded in container)
+backend/vendor/
+
+# Storage (will be mounted or use cloud)
+storage/
+backend/storage/
+
+# Misc
+*.bak
+*.tmp
+*.exe
+*.rar
+*.deb
+*.tar.gz
+
+# Encrypted files
+*.enc
+
+# Scripts not needed in production
+scripts/
+postman_tests/
+backend/scripts/
+backend/postman_tests/
+
+# Development docker files
+docker-compose.yaml
+frontend/docker-compose.yaml
+backend/Dockerfile.dev
+frontend/frontend.Dockerfile.dev
+
+# Mock backend
+frontend/mockbe/
+
+# Trivy and other tools
+trivy_*
+sops-*
+

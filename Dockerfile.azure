@@ -1,0 +1,126 @@
+# ============================================
+# Multi-stage Dockerfile for Azure App Service
+# Builds: Backend (Go) + Frontend (Next.js) + Nginx
+# ============================================
+
+# ==================== Stage 1: Build Backend ====================
+FROM golang:1.21-alpine AS backend-builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apk add --no-cache git make
+
+# Copy go mod files
+COPY backend/go.mod backend/go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy backend source
+COPY backend/ ./
+
+# Build the Go binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-w -s" \
+    -o /app/backend \
+    ./cmd/server/main.go
+
+# ==================== Stage 2: Build Frontend ====================
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /build
+
+# Copy package files
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy frontend source
+COPY frontend/ ./
+
+# Set build-time environment variable (empty = relative path)
+ENV NEXT_PUBLIC_API_URL=""
+
+# Build Next.js app
+RUN npm run build
+
+# ==================== Stage 3: Final Production Image ====================
+FROM nginx:alpine
+
+# Install supervisor to manage multiple processes
+RUN apk add --no-cache supervisor curl
+
+# Create app directories
+RUN mkdir -p /app/backend /app/frontend /app/storage/uploads /var/log/supervisor
+
+# Copy backend binary from builder
+COPY --from=backend-builder /app/backend /app/backend/server
+
+# Copy backend migrations
+COPY backend/migrations /app/backend/migrations
+
+# Copy frontend build from builder
+COPY --from=frontend-builder /build/.next /app/frontend/.next
+COPY --from=frontend-builder /build/public /app/frontend/public
+COPY --from=frontend-builder /build/node_modules /app/frontend/node_modules
+COPY --from=frontend-builder /build/package.json /app/frontend/package.json
+COPY --from=frontend-builder /build/next.config.ts /app/frontend/next.config.ts
+
+# Copy nginx configuration
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
+
+# Create supervisor configuration
+RUN cat > /etc/supervisord.conf <<'EOF'
+[supervisord]
+nodaemon=true
+user=root
+logfile=/var/log/supervisor/supervisord.log
+pidfile=/var/run/supervisord.pid
+
+[program:nginx]
+command=nginx -g "daemon off;"
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+priority=10
+
+[program:backend]
+command=/app/backend/server
+directory=/app/backend
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+priority=20
+environment=APP_ENV="production",APP_PORT="8080"
+
+[program:frontend]
+command=node_modules/.bin/next start -p 3000
+directory=/app/frontend
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+priority=30
+environment=NODE_ENV="production",NEXT_PUBLIC_API_URL=""
+EOF
+
+# Expose port 80 (Azure App Service default)
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost/health || exit 1
+
+# Start supervisor to manage all processes
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+

@@ -12,7 +12,7 @@ func SetupRoutes(
 	authController *controllers.AuthController,
 	authMiddleware gin.HandlerFunc,
 ) {
-	// Health check endpoint (no /api prefix for health checks)
+	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})

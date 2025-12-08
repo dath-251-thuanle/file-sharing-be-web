@@ -20,9 +20,19 @@ import (
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/services"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/storage"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load .env file from root folder (../.env) or backend folder (./.env)
+	// Try root folder first (when running from backend/ directory)
+	if err := godotenv.Load("../.env"); err != nil {
+		// Fallback to backend/.env if root .env doesn't exist
+		if err := godotenv.Load(".env"); err != nil {
+			log.Printf("Warning: Error loading .env file: %v (using environment variables only)", err)
+		}
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
@@ -145,6 +155,12 @@ func corsMiddleware(corsCfg *config.CORSConfig) gin.HandlerFunc {
 					allowed = true
 					break
 				}
+			}
+			// Debug logging: log when origin doesn't match
+			if !allowed && origin != "" {
+				log.Printf("[CORS] Origin '%s' not in allowed list: %v", origin, corsCfg.AllowedOrigins)
+			} else if allowed {
+				log.Printf("[CORS] Origin '%s' matched, allowing request", origin)
 			}
 		} else {
 			allowed = true
