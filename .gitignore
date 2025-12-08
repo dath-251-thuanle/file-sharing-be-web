@@ -37,6 +37,7 @@ ehthumbs.db
 .env
 .env.local
 .env.*.local
+.env.prod
 
 # Logs
 *.log
