@@ -1,0 +1,84 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy Application
+    runs-on: self-hosted
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Decrypt production environment file
+        run: |
+          # Decrypt prod.enc to .env using SOPS
+          # Make sure SOPS is installed on the self-hosted runner
+          # and the encryption key is configured
+          sops -d prod.enc > .env
+        env:
+          # SOPS will use the key from the environment or key file
+          # Make sure to configure SOPS_AGE_KEY_FILE or SOPS_AGE_KEY on the runner
+
+      - name: Verify .env file exists
+        run: |
+          if [ ! -f .env ]; then
+            echo "Error: .env file not found after decryption"
+            exit 1
+          fi
+          echo "✅ .env file decrypted successfully"
+
+      - name: Stop existing containers
+        run: |
+          docker compose down || true
+
+      - name: Pull latest images (if using pre-built images)
+        run: |
+          # Uncomment if you're using pre-built images from registry
+          # docker compose pull || true
+
+      - name: Build and start containers
+        run: |
+          docker compose build --no-cache
+          docker compose up -d
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for services to start..."
+          sleep 10
+          
+          # Check if backend is healthy
+          max_attempts=30
+          attempt=0
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -f http://localhost/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy"
+              break
+            fi
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts: Waiting for backend..."
+            sleep 2
+          done
+          
+          if [ $attempt -eq $max_attempts ]; then
+            echo "❌ Backend failed to become healthy"
+            docker compose logs app
+            exit 1
+          fi
+
+      - name: Show container status
+        run: |
+          docker compose ps
+          docker compose logs --tail=50
+
+      - name: Cleanup old images
+        run: |
+          # Remove dangling images to save disk space
+          docker image prune -f
+

@@ -1,0 +1,71 @@
+name: CI - Build and Test
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    name: Build Docker Images
+    runs-on: self-hosted
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        run: |
+          docker build -f backend/Dockerfile -t file-sharing-backend:test ./backend
+
+      - name: Build frontend image
+        run: |
+          docker build -f frontend/frontend.Dockerfile -t file-sharing-frontend:test ./frontend
+
+      - name: Build production image (Azure)
+        run: |
+          docker build -f Dockerfile.azure -t file-sharing-azure:test .
+
+      - name: Verify images
+        run: |
+          docker images | grep file-sharing
+
+  test:
+    name: Run Tests
+    runs-on: self-hosted
+    needs: build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Decrypt dev environment file
+        run: |
+          # Decrypt dev.enc to .env for testing
+          sops -d dev.enc > .env || echo "Warning: dev.enc not found, using example.env"
+          if [ ! -f .env ]; then
+            cp example.env .env
+          fi
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          # Add your test commands here
+          # go test ./... -v
+          echo "Tests would run here"
+
+      - name: Run frontend tests
+        run: |
+          cd frontend
+          # Add your test commands here
+          # npm test
+          echo "Tests would run here"
+

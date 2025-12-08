@@ -34,10 +34,17 @@ desktop.ini
 ehthumbs.db
 
 # Environment files
+# Ignore unencrypted .env files
 .env
 .env.local
 .env.*.local
 .env.prod
+
+# But allow encrypted .enc files and example.env (these should be committed)
+!*.enc
+!example.env
+!dev.enc
+!prod.enc
 
 # Logs
 *.log
