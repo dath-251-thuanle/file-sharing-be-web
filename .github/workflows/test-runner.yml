@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Print runner info
         run: |
-          echo "Runner is working!"
+          echo "Runner is running!"
           echo "Hostname: $(hostname)"
           echo "Current dir: $(pwd)"
           echo "Files:"
