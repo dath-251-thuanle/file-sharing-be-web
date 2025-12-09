@@ -1,0 +1,10 @@
+name: Test self-hosted runner
+
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: self-hosted   # dùng label 'self-hosted' của Kkanger
+    steps:
+      - run: echo "Hello from $(hostname)"
