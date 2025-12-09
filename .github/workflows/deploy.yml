@@ -10,22 +10,19 @@ on:
 jobs:
   deploy:
     name: Deploy Application
-    runs-on: self-hosted
-    
+    runs-on: [self-hosted, Linux, X64]   # đúng 3 label của runner Kkanger
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Decrypt production environment file
         run: |
-          # Decrypt prod.enc to .env using SOPS
-          # Make sure SOPS is installed on the self-hosted runner
-          # and the encryption key is configured
           echo "Decrypting prod.enc -> .env"
           sops -d prod.enc > .env
+        # Nếu bạn cần set biến môi trường cho sops thì mở comment bên dưới
         # env:
-          # SOPS will use the key from the environment or key file
-          # Make sure to configure SOPS_AGE_KEY_FILE or SOPS_AGE_KEY on the runner
+        #   SOPS_AGE_KEY_FILE: /home/github/.config/sops/age/keys.txt
 
       - name: Verify .env file exists
         run: |
@@ -39,10 +36,9 @@ jobs:
         run: |
           docker compose down || true
 
-      - name: Pull latest images (if using pre-built images)
-        run: |
-          # Uncomment if you're using pre-built images from registry
-          # docker compose pull || true
+      # - name: Pull latest images (if using pre-built images)
+      #   run: |
+      #     docker compose pull || true
 
       - name: Build and start containers
         run: |
@@ -53,25 +49,22 @@ jobs:
         run: |
           echo "Waiting for services to start..."
           sleep 10
-          
-          # Check if backend is healthy
+
           max_attempts=30
           attempt=0
           while [ $attempt -lt $max_attempts ]; do
-            if curl -f http://localhost/health > /dev/null 2>&1; then
+            if curl -fsS http://localhost/health >/dev/null 2>&1; then
               echo "✅ Backend is healthy"
-              break
+              exit 0
             fi
             attempt=$((attempt + 1))
             echo "Attempt $attempt/$max_attempts: Waiting for backend..."
             sleep 2
           done
-          
-          if [ $attempt -eq $max_attempts ]; then
-            echo "❌ Backend failed to become healthy"
-            docker compose logs app
-            exit 1
-          fi
+
+          echo "❌ Backend failed to become healthy"
+          docker compose logs
+          exit 1
 
       - name: Show container status
         run: |
@@ -80,7 +73,4 @@ jobs:
 
       - name: Cleanup old images
         run: |
-          # Remove dangling images to save disk space
           docker image prune -f
-
-
