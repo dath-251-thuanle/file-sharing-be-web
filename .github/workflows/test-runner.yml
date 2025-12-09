@@ -4,19 +4,15 @@ on:
   push:
     branches:
       - main
-      - develop
-      - "*"     # chạy mọi branch cho dễ test
 
 jobs:
   test-runner:
-    runs-on: self-hosted   # dùng runner Kkanger
+    runs-on: [self-hosted, Linux, X64]   # 👈 Dùng đúng 3 label của Kkanger
     steps:
-      - name: Print hostname
+      - name: Print runner info
         run: |
           echo "Runner is working!"
-          echo "Running on: $(hostname)"
-          echo "Current directory:"
-          pwd
-          echo "Listing files:"
+          echo "Hostname: $(hostname)"
+          echo "Current dir: $(pwd)"
+          echo "Files:"
           ls -al
-
