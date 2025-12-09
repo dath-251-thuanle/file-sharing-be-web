@@ -21,8 +21,9 @@ jobs:
           # Decrypt prod.enc to .env using SOPS
           # Make sure SOPS is installed on the self-hosted runner
           # and the encryption key is configured
+          echo "Decrypting prod.enc -> .env"
           sops -d prod.enc > .env
-        env:
+        # env:
           # SOPS will use the key from the environment or key file
           # Make sure to configure SOPS_AGE_KEY_FILE or SOPS_AGE_KEY on the runner
 
@@ -81,4 +82,5 @@ jobs:
         run: |
           # Remove dangling images to save disk space
           docker image prune -f
+
 
