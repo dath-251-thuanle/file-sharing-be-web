@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* Nếu bạn muốn định nghĩa thêm CSS riêng */
+@layer utilities {
+  /* Ẩn scrollbar */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Hiệu ứng kính mờ */
+  .glass {
+    @apply bg-white/80 backdrop-blur-md border border-white/20;
+  }
+  
+  /* Animation xoay chậm */
+  .animate-spin-slow {
+    animation: spin 3s linear infinite;
+  }
+}
+
+/* LƯU Ý: Trong Tailwind v4, thay vì dùng @apply trong @layer base cho body,
+   chúng ta nên đưa class trực tiếp vào thẻ <body> trong layout.tsx 
+   để tránh lỗi "unknown utility class".
+*/
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}

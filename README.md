@@ -2,7 +2,7 @@
 
 Backend API cho hệ thống chia sẻ file tạm thời, được xây dựng bằng **Golang** với **Gin Framework** và **PostgreSQL**.
 
-## ⚡ Quick Start
+## Quick Start
 
 ```bash
 cd backend
@@ -32,57 +32,56 @@ Tài liệu vận hành chi tiết xem tại [`backend/SETUP_WITH_DOCKER.md`](./
 | 7   | Nguyễn Hữu Minh Khôi   | 2352614            |
 | 8   | Nguyễn Huỳnh Gia Đại  | 2310624            |
 
-## 🚀 Tính năng
+## Tính năng
 
-- ✅ Upload file (có hoặc không cần đăng nhập)
-- ✅ Tạo link chia sẻ duy nhất cho mỗi file
-- ✅ Thiết lập thời gian hiệu lực linh hoạt (from/to)
-- ✅ Bảo vệ file bằng mật khẩu (bcrypt)
-- ✅ Xác thực 2FA với TOTP (Google Authenticator)
-- ✅ Chia sẻ với danh sách người dùng cụ thể
-- ✅ Tự động xóa file hết hạn (cron job)
-- ✅ JWT authentication
-- ✅ Admin dashboard & system policy management
+- Upload file (có hoặc không cần đăng nhập)
+- Tạo link chia sẻ duy nhất cho mỗi file
+- Thiết lập thời gian hiệu lực linh hoạt (from/to)
+- Bảo vệ file bằng mật khẩu (bcrypt)
+- Xác thực 2FA với TOTP (Google Authenticator)
+- Chia sẻ với danh sách người dùng cụ thể
+- Tự động xóa file hết hạn (cron job)
+- JWT authentication
+- Admin dashboard & system policy management
 
-## 📋 Yêu cầu
+## Yêu cầu
 
 - Go 1.21 hoặc cao hơn
 - PostgreSQL 14+
 - Docker & Docker Compose (optional)
 
-## 🛠️ Cài đặt
+## Cài đặt
 
 Xem hướng dẫn chi tiết tại [`backend/SETUP_WITH_DOCKER.md`](./backend/SETUP_WITH_DOCKER.md)
 
-## 📚 Documentation & Reports
+## Documentation & Reports
 
-- Toàn bộ source code, tài liệu kỹ thuật và báo cáo cần được cập nhật trong repo này.
-- Thư mục `docs/` chứa API spec (OpenAPI, Swagger), báo cáo kỹ thuật phụ trợ, biểu đồ…Ghi chú chi tiết từng file/danh mục nên được duy trì trong chính thư mục này.
-- Thư mục `reports/` (nếu có) dùng cho báo cáo cuối kỳ/slide. Nếu chưa tồn tại hãy tạo và commit cùng README mô tả nội dung.
-- Khi bổ sung tài liệu mới hãy update cả README này hoặc file hướng dẫn phù hợp để người khác dễ tìm.
+### Documents
 
-### API Specs
+Thư mục `docs/` chứa tài liệu hướng dẫn cho dự án:
 
-### API Specs
+- `backend/docs/API_DOCUMENTATION.md` - Hướng dẫn sử dụng API
+- `backend/docs/openapi.yaml` - OpenAPI specification
+- `backend/docs/swagger/` - Swagger documentation
+- `backend/SETUP_WITH_DOCKER.md` - Hướng dẫn deploy với Docker
+- `DEPLOYMENT.md` - Hướng dẫn deploy production
+- `SOPS_SETUP.md` - Hướng dẫn setup SOPS cho environment variables
 
-- OpenAPI YAML: `docs/openapi.yaml`
-- Swagger JSON: `docs/swagger.json`
-- Markdown: `docs/API_DOCUMENTATION.md`
+### Reports
+
+Thư mục `reports/` chứa báo cáo cho môn học:
+
+- `backend/report/Report.pdf` - Báo cáo dự án
 
 ### Generate Swagger docs
 
 ```bash
-# Cài swag CLI
 go install github.com/swaggo/swag/cmd/swag@latest
-
-# Generate docs
 make swagger
-
-# Hoặc
 swag init -g cmd/server/main.go -o docs/swagger
 ```
 
-## 🔧 Make Commands
+## Make Commands
 
 ```bash
 # Compose-based workflow (khuyến nghị)
@@ -97,7 +96,7 @@ make build
 make clean
 ```
 
-## 📁 Cấu trúc thư mục
+## Cấu trúc thư mục
 
 ```
 backend/
@@ -127,25 +126,25 @@ backend/
 ├── tests/
 │   ├── integration/      # Integration tests (TODO)
 │   └── unit/             # Unit tests (TODO)
-├── docs/
-│   ├── openapi.yaml      # OpenAPI specification ✅
-│   ├── swagger.json      # Swagger JSON ✅
-│   └── API_DOCUMENTATION.md  # API guide ✅
+├── docs/                 # Documentation
+│   ├── openapi.yaml
+│   ├── swagger.json
+│   └── API_DOCUMENTATION.md
+├── reports/              # Báo cáo môn học
 ├── .github/
-│   └── workflows/        # CI/CD workflows
-├── .env.example          # Environment template ✅
-├── .env                  # Environment variables ✅
-├── .gitignore            # Git ignore ✅
-├── .dockerignore         # Docker ignore
-├── Dockerfile            # Docker configuration
-├── docker-compose.yml    # Docker Compose
-├── go.mod                # Go modules ✅
-├── go.sum                # Go dependencies checksum
-├── Makefile              # Build commands ✅
-└── README.md             # This file ✅
+│   └── workflows/
+├── .env.example
+├── .env
+├── .gitignore
+├── Dockerfile
+├── docker-compose.yml
+├── go.mod
+├── go.sum
+├── Makefile
+└── README.md
 ```
 
-## 🔐 Environment Variables
+## Environment Variables
 
 Xem file `.env.example` để biết tất cả biến môi trường cần thiết.
 
@@ -170,7 +169,17 @@ MAX_FILE_SIZE_MB=50
 CLEANUP_SECRET=change_this_cleanup_secret
 ```
 
-## 🧪 Testing
+### Decrypt Environment Files (SOPS)
+
+```bash
+# Decrypt production
+sops -d --input-type dotenv --output-type dotenv prod.enc > .env
+
+# Decrypt development
+sops -d --input-type dotenv --output-type dotenv dev.enc > .env
+```
+
+## Testing
 
 ```bash
 # Chạy tất cả tests
@@ -186,7 +195,7 @@ go test ./internal/services/...
 go test -v ./...
 ```
 
-## 📊 Database Schema
+## Database Schema
 
 Database schema được định nghĩa trong `database/schema.sql`:
 
@@ -204,7 +213,7 @@ Database schema được định nghĩa trong `database/schema.sql`:
 - File validity period với constraints
 - Indexes cho performance
 
-## 🔄 CI/CD
+## CI/CD
 
 GitHub Actions workflows:
 
@@ -214,7 +223,7 @@ GitHub Actions workflows:
 
 Xem `.github/workflows/` để biết chi tiết.
 
-## 📝 Development Workflow
+## Development Workflow
 
 1. **Tạo feature branch**
 
@@ -243,7 +252,7 @@ Xem `.github/workflows/` để biết chi tiết.
    ```
 5. **Create Pull Request**
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Port đã được sử dụng
 

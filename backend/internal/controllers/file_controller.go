@@ -693,6 +693,126 @@ func (fc *FileController) DownloadFile(c *gin.Context) {
 	}()
 }
 
+// PreviewFile handles file preview/streaming by share token (inline display)
+// GET /files/:shareToken/preview
+func (fc *FileController) PreviewFile(c *gin.Context) {
+	shareToken := c.Param("shareToken")
+
+	currentUserID := getUserIDFromContext(c)
+	currentUserEmail := getUserEmailFromContext(c)
+
+	// Get file metadata from database with relationships
+	file, err := fc.fileService.GetByShareToken(shareToken)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":   "Not found",
+				"message": "File not found",
+			})
+			return
+		}
+		return
+	}
+
+	// Security check 1: File status (expired/pending)
+	isOwner := currentUserID != nil && file.OwnerID != nil && *currentUserID == *file.OwnerID
+	status := file.GetStatus()
+
+	if status == "expired" {
+		c.JSON(http.StatusGone, gin.H{
+			"error":     "File expired",
+			"expiredAt": file.AvailableTo,
+		})
+		return
+	}
+
+	if status == "pending" && !isOwner {
+		hoursUntilAvailable := 0.0
+		if file.AvailableFrom != nil {
+			hoursUntilAvailable = time.Until(*file.AvailableFrom).Hours()
+		}
+		c.JSON(http.StatusLocked, gin.H{
+			"error":               "File not yet available",
+			"availableFrom":       file.AvailableFrom,
+			"hoursUntilAvailable": hoursUntilAvailable,
+		})
+		return
+	}
+
+	if len(file.SharedWithEmails) > 0 {
+		if isOwner {
+		} else if currentUserID != nil && currentUserEmail != "" {
+			isWhitelisted := false
+			for _, email := range file.SharedWithEmails {
+				if strings.EqualFold(email, currentUserEmail) {
+					isWhitelisted = true
+					break
+				}
+			}
+
+			if !isWhitelisted {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":   "Access denied",
+					"message": "You are not allowed to preview this file. Your email is not in the shared list",
+				})
+				return
+			}
+		} else {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error":   "Unauthorized",
+				"message": "This file requires authentication. Please provide a Bearer token",
+			})
+			return
+		}
+	}
+
+	// Security check 3: Password protection (owner can bypass)
+	if file.HasPassword() && !isOwner {
+		password := strings.TrimSpace(c.GetHeader("X-File-Password"))
+
+		if password == "" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "Password required",
+				"message": "This file is password-protected",
+			})
+			return
+		}
+
+		if err := bcrypt.CompareHashAndPassword([]byte(*file.PasswordHash), []byte(password)); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "Incorrect password",
+				"message": "The file password is incorrect",
+			})
+			return
+		}
+	}
+
+	container := containerFromFile(file)
+
+	downloadResult, err := fc.fileService.Download(c.Request.Context(), &file.FilePath, container)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Preview failed",
+			"message": err.Error(),
+		})
+		return
+	}
+	defer downloadResult.Reader.Close()
+
+	// KEY DIFFERENCE: Use "inline" instead of "attachment" for preview
+	c.Header("Content-Disposition", "inline; filename=\""+file.FileName+"\"")
+	c.Header("Content-Type", downloadResult.ContentType)
+	c.Header("Content-Length", fmt.Sprintf("%d", downloadResult.Size))
+
+	c.Status(http.StatusOK)
+	_, copyError := io.Copy(c.Writer, downloadResult.Reader)
+
+	// Note: Preview doesn't record download history
+	if copyError != nil {
+		fmt.Printf("Preview stream error: %v\n", copyError)
+	}
+}
+
 func containerFromFile(file *models.File) storage.ContainerType {
 	if file != nil && file.IsPublic != nil && *file.IsPublic {
 		return storage.ContainerPublic

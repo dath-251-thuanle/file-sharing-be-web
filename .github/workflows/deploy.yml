@@ -10,7 +10,7 @@ on:
 jobs:
   deploy:
     name: Deploy Application
-    runs-on: [self-hosted, Linux, X64]   # đúng 3 label của runner Kkanger
+    runs-on: [self-hosted, Linux, X64]
 
     steps:
       - name: Checkout code
@@ -20,7 +20,6 @@ jobs:
         run: |
           echo "Decrypting prod.enc -> .env"
           sops -d prod.enc > .env
-        # Nếu bạn cần set biến môi trường cho sops thì mở comment bên dưới
         # env:
         #   SOPS_AGE_KEY_FILE: /home/github/.config/sops/age/keys.txt
 
