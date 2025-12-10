@@ -132,3 +132,5 @@ coverage/
 *.local.*
 *.deb
 sops-*.check*
+
+.sops.yaml

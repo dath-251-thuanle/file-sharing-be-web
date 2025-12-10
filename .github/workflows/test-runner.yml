@@ -7,7 +7,7 @@ on:
 
 jobs:
   test-runner:
-    runs-on: [self-hosted, Linux, X64]   # 👈 Dùng đúng 3 label của Kkanger
+    runs-on: [self-hosted, Linux, X64] 
     steps:
       - name: Print runner info
         run: |
