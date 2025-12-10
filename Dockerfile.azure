@@ -55,8 +55,8 @@ RUN rm -rf node_modules && \
 # ==================== Stage 3: Final Production Image ====================
 FROM nginx:alpine
 
-# Install supervisor to manage multiple processes
-RUN apk add --no-cache supervisor curl
+# Install supervisor, curl, and Node.js (required for Next.js production server)
+RUN apk add --no-cache supervisor curl nodejs npm
 
 # Create app directories
 RUN mkdir -p /app/backend /app/frontend /app/storage/uploads /var/log/supervisor

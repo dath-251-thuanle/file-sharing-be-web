@@ -164,18 +164,48 @@ jobs:
 
           max_attempts=30
           attempt=0
+          backend_healthy=false
+          frontend_healthy=false
+          
           while [ $attempt -lt $max_attempts ]; do
-            if curl -fsS http://localhost/health >/dev/null 2>&1; then
-              echo "✅ Backend is healthy (local check)"
+            # Check backend health
+            if [ "$backend_healthy" = "false" ] && curl -fsS http://localhost/health >/dev/null 2>&1; then
+              echo "✅ Backend is healthy"
+              backend_healthy=true
+            fi
+            
+            # Check frontend (should return HTML, not 502)
+            if [ "$frontend_healthy" = "false" ]; then
+              response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/ 2>/dev/null || echo "000")
+              if [ "$response" = "200" ] || [ "$response" = "304" ]; then
+                echo "✅ Frontend is healthy (HTTP $response)"
+                frontend_healthy=true
+              elif [ "$response" = "502" ] || [ "$response" = "503" ]; then
+                echo "⚠️  Frontend returned $response (not ready yet)"
+              fi
+            fi
+            
+            # Both healthy, exit
+            if [ "$backend_healthy" = "true" ] && [ "$frontend_healthy" = "true" ]; then
+              echo "✅ Both backend and frontend are healthy!"
               exit 0
             fi
+            
             attempt=$((attempt + 1))
-            echo "Attempt $attempt/$max_attempts: Waiting for backend..."
+            echo "Attempt $attempt/$max_attempts: Backend=$backend_healthy, Frontend=$frontend_healthy"
             sleep 2
           done
 
-          echo "❌ Backend failed to become healthy (local check)"
+          echo "❌ Services failed to become healthy"
+          echo "Backend healthy: $backend_healthy"
+          echo "Frontend healthy: $frontend_healthy"
           docker compose logs --tail=100
+          
+          # Check supervisor status
+          echo ""
+          echo "=== Supervisor Status ==="
+          docker compose exec -T app supervisorctl status 2>/dev/null || echo "Cannot access supervisorctl"
+          
           exit 1
 
       - name: Show container status
@@ -186,30 +216,70 @@ jobs:
           echo "=== Recent Logs (last 100 lines) ==="
           docker compose logs --tail=100
           echo ""
-          echo "=== Supervisor Status (if available) ==="
+          echo "=== Supervisor Status ==="
           docker compose exec -T app supervisorctl status 2>/dev/null || echo "Cannot access supervisorctl"
+          echo ""
+          echo "=== Service Health Check ==="
+          echo "Backend health:"
+          curl -f http://localhost/health && echo " ✅" || echo " ❌"
+          echo ""
+          echo "Frontend check:"
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/ || echo "000")
+          if [ "$http_code" = "502" ] || [ "$http_code" = "503" ]; then
+            echo "❌ Frontend returned HTTP $http_code (Bad Gateway/Service Unavailable)"
+          elif [ "$http_code" = "200" ] || [ "$http_code" = "304" ]; then
+            echo "✅ Frontend is responding (HTTP $http_code)"
+          else
+            echo "⚠️  Frontend returned HTTP $http_code"
+          fi
 
-      - name: Test Azure App Service health endpoint
+      - name: Test Azure App Service endpoints
         run: |
-          echo "Testing Azure App Service health endpoint..."
-          echo "URL: https://sharefilehcmut.azurewebsites.net/health"
+          echo "Testing Azure App Service endpoints..."
           
           max_attempts=10
           attempt=0
+          backend_ok=false
+          frontend_ok=false
+          
           while [ $attempt -lt $max_attempts ]; do
-            if curl -fsS --max-time 10 https://sharefilehcmut.azurewebsites.net/health >/dev/null 2>&1; then
-              echo "✅ Azure App Service is healthy!"
-              curl -s https://sharefilehcmut.azurewebsites.net/health | head -20
+            # Check backend
+            if [ "$backend_ok" = "false" ] && curl -fsS --max-time 10 https://sharefilehcmut.azurewebsites.net/health >/dev/null 2>&1; then
+              echo "✅ Azure Backend is healthy!"
+              curl -s https://sharefilehcmut.azurewebsites.net/health
+              backend_ok=true
+            fi
+            
+            # Check frontend
+            if [ "$frontend_ok" = "false" ]; then
+              http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://sharefilehcmut.azurewebsites.net/ 2>/dev/null || echo "000")
+              if [ "$http_code" = "200" ] || [ "$http_code" = "304" ]; then
+                echo "✅ Azure Frontend is healthy (HTTP $http_code)"
+                frontend_ok=true
+              elif [ "$http_code" = "502" ] || [ "$http_code" = "503" ]; then
+                echo "⚠️  Azure Frontend returned $http_code (not ready yet)"
+              fi
+            fi
+            
+            # Both OK, exit
+            if [ "$backend_ok" = "true" ] && [ "$frontend_ok" = "true" ]; then
+              echo "✅ Both Azure backend and frontend are healthy!"
               exit 0
             fi
+            
             attempt=$((attempt + 1))
-            echo "Attempt $attempt/$max_attempts: Azure App Service not ready yet, waiting 5 seconds..."
+            echo "Attempt $attempt/$max_attempts: Backend=$backend_ok, Frontend=$frontend_ok"
             sleep 5
           done
           
-          echo "⚠️  Azure App Service health check failed or timed out"
-          echo "This might be normal if the deployment is still in progress"
-          echo "Check Azure Portal logs for more details"
+          echo "⚠️  Azure App Service health check results:"
+          echo "Backend healthy: $backend_ok"
+          echo "Frontend healthy: $frontend_ok"
+          if [ "$frontend_ok" = "false" ]; then
+            echo "❌ Frontend check failed - this will cause 502 errors!"
+            echo "Check Azure Portal logs for more details"
+            exit 1
+          fi
 
       - name: Cleanup old images
         run: |
