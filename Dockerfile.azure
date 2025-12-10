@@ -67,6 +67,13 @@ COPY --from=backend-builder /app/backend /app/backend/server
 # Copy backend migrations
 COPY backend/migrations /app/backend/migrations
 
+# Copy backend configs (required for backend to start)
+COPY backend/configs /app/backend/configs
+
+# Create symlink for storage path compatibility
+# Backend runs from /app/backend, so ./storage/uploads should point to /app/storage/uploads
+RUN mkdir -p /app/backend/storage && ln -sf /app/storage/uploads /app/backend/storage/uploads
+
 # Copy frontend build from builder
 COPY --from=frontend-builder /build/.next /app/frontend/.next
 COPY --from=frontend-builder /build/public /app/frontend/public
@@ -108,7 +115,7 @@ priority=20
 environment=APP_ENV="production",APP_PORT="8080"
 
 [program:frontend]
-command=node_modules/.bin/next start -p 3000
+command=npm start
 directory=/app/frontend
 autostart=true
 autorestart=true
@@ -117,7 +124,7 @@ stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
 priority=30
-environment=NODE_ENV="production",NEXT_PUBLIC_API_URL=""
+environment=NODE_ENV="production",NEXT_PUBLIC_API_URL="",PORT="3000"
 EOF
 
 # Expose port 80 (Azure App Service default)
