@@ -157,7 +157,7 @@ jobs:
         run: |
           docker compose up -d
 
-      - name: Wait for services to be healthy
+      - name: Wait for services to be healthy (local check)
         run: |
           echo "Waiting for services to start..."
           sleep 10
@@ -166,7 +166,7 @@ jobs:
           attempt=0
           while [ $attempt -lt $max_attempts ]; do
             if curl -fsS http://localhost/health >/dev/null 2>&1; then
-              echo "✅ Backend is healthy"
+              echo "✅ Backend is healthy (local check)"
               exit 0
             fi
             attempt=$((attempt + 1))
@@ -174,8 +174,8 @@ jobs:
             sleep 2
           done
 
-          echo "❌ Backend failed to become healthy"
-          docker compose logs
+          echo "❌ Backend failed to become healthy (local check)"
+          docker compose logs --tail=100
           exit 1
 
       - name: Show container status
@@ -183,8 +183,33 @@ jobs:
           echo "=== Container Status ==="
           docker compose ps
           echo ""
-          echo "=== Recent Logs ==="
-          docker compose logs --tail=50
+          echo "=== Recent Logs (last 100 lines) ==="
+          docker compose logs --tail=100
+          echo ""
+          echo "=== Supervisor Status (if available) ==="
+          docker compose exec -T app supervisorctl status 2>/dev/null || echo "Cannot access supervisorctl"
+
+      - name: Test Azure App Service health endpoint
+        run: |
+          echo "Testing Azure App Service health endpoint..."
+          echo "URL: https://sharefilehcmut.azurewebsites.net/health"
+          
+          max_attempts=10
+          attempt=0
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -fsS --max-time 10 https://sharefilehcmut.azurewebsites.net/health >/dev/null 2>&1; then
+              echo "✅ Azure App Service is healthy!"
+              curl -s https://sharefilehcmut.azurewebsites.net/health | head -20
+              exit 0
+            fi
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts: Azure App Service not ready yet, waiting 5 seconds..."
+            sleep 5
+          done
+          
+          echo "⚠️  Azure App Service health check failed or timed out"
+          echo "This might be normal if the deployment is still in progress"
+          echo "Check Azure Portal logs for more details"
 
       - name: Cleanup old images
         run: |
@@ -194,5 +219,17 @@ jobs:
       - name: Deployment successful
         run: |
           echo "🎉 Deployment completed successfully!"
-          echo "Application is running at: http://localhost"
+          echo ""
+          echo "=== Application URLs ==="
+          echo "Main URL: https://sharefilehcmut.azurewebsites.net"
+          echo "Health Check: https://sharefilehcmut.azurewebsites.net/health"
+          echo ""
+          echo "=== Debugging Tips ==="
+          echo "1. Check Azure Portal > App Service > Log stream for real-time logs"
+          echo "2. Check Azure Portal > App Service > Advanced Tools > Kudu > Debug console"
+          echo "3. View logs: Azure Portal > App Service > Log stream or Monitoring > Logs"
+          echo "4. SSH into container: Azure Portal > App Service > SSH"
+          echo ""
+          echo "=== Quick Health Check ==="
+          curl -s https://sharefilehcmut.azurewebsites.net/health || echo "Health endpoint not yet available"
 
