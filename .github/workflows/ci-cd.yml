@@ -236,8 +236,9 @@ jobs:
       - name: Test Azure App Service endpoints
         run: |
           echo "Testing Azure App Service endpoints..."
+          echo "Note: Will wait up to 5 minutes (60 attempts × 5s) for services to be ready..."
           
-          max_attempts=10
+          max_attempts=60
           attempt=0
           backend_ok=false
           frontend_ok=false
@@ -257,7 +258,7 @@ jobs:
                 echo "✅ Azure Frontend is healthy (HTTP $http_code)"
                 frontend_ok=true
               elif [ "$http_code" = "502" ] || [ "$http_code" = "503" ]; then
-                echo "⚠️  Azure Frontend returned $http_code (not ready yet)"
+                echo "⚠️  Azure Frontend returned $http_code (not ready yet, attempt $((attempt + 1))/$max_attempts)"
               fi
             fi
             
@@ -268,15 +269,20 @@ jobs:
             fi
             
             attempt=$((attempt + 1))
-            echo "Attempt $attempt/$max_attempts: Backend=$backend_ok, Frontend=$frontend_ok"
+            if [ $((attempt % 6)) -eq 0 ]; then
+              elapsed=$((attempt * 5))
+              echo "Attempt $attempt/$max_attempts: Backend=$backend_ok, Frontend=$frontend_ok (elapsed: ${elapsed}s)"
+            else
+              echo "Attempt $attempt/$max_attempts: Backend=$backend_ok, Frontend=$frontend_ok"
+            fi
             sleep 5
           done
           
-          echo "⚠️  Azure App Service health check results:"
+          echo "⚠️  Azure App Service health check results (after 5 minutes):"
           echo "Backend healthy: $backend_ok"
           echo "Frontend healthy: $frontend_ok"
           if [ "$frontend_ok" = "false" ]; then
-            echo "❌ Frontend check failed - this will cause 502 errors!"
+            echo "❌ Frontend check failed after 5 minutes - this will cause 502 errors!"
             echo "Check Azure Portal logs for more details"
             exit 1
           fi
