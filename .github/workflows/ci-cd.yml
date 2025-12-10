@@ -114,6 +114,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup SOPS AGE key
+        run: |
+          echo "Setting up SOPS AGE key..."
+          mkdir -p /home/github/.config/sops/age
+          echo "${{ secrets.SOPS_AGE_KEY }}" > /home/github/.config/sops/age/keys.txt
+          chmod 600 /home/github/.config/sops/age/keys.txt
+          echo "✅ AGE key file created"
+
       - name: Decrypt production environment file
         run: |
           echo "Decrypting prod.enc -> .env"
