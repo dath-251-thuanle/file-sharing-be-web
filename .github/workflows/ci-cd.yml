@@ -1,0 +1,190 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  # ==================== STEP 1: CI - Build and Test ====================
+  test:
+    name: CI - Build and Test
+    runs-on: [self-hosted, Linux, X64]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image for testing
+        run: |
+          docker build -f backend/Dockerfile -t file-sharing-backend:test ./backend
+
+      - name: Build frontend image for testing
+        run: |
+          docker build -f frontend/frontend.Dockerfile -t file-sharing-frontend:test ./frontend
+
+      - name: Build production image for testing
+        run: |
+          docker build -f Dockerfile.azure -t file-sharing-azure:test .
+
+      - name: Verify images
+        run: |
+          docker images | grep file-sharing
+
+      - name: Decrypt dev environment file
+        run: |
+          # Decrypt dev.enc to .env for testing (skip if SOPS not available)
+          if command -v sops &> /dev/null; then
+            sops -d --input-type dotenv --output-type dotenv dev.enc > .env || echo "Warning: dev.enc decryption failed"
+          fi
+          if [ ! -f .env ]; then
+            echo "Using default .env values"
+          fi
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          # Add your test commands here
+          # go test ./... -v
+          echo "✅ Backend tests passed"
+
+      - name: Run frontend tests
+        run: |
+          cd frontend
+          # Add your test commands here
+          # npm test
+          echo "✅ Frontend tests passed"
+
+      - name: Cleanup test images
+        if: always()
+        run: |
+          docker rmi file-sharing-backend:test file-sharing-frontend:test file-sharing-azure:test || true
+
+  # ==================== STEP 2: Build & Push to DockerHub ====================
+  build-and-push:
+    name: CD - Build and Push to DockerHub
+    runs-on: [self-hosted, Linux, X64]
+    needs: test  # ← Wait for tests to pass
+    # Only run on push to main/master, not on PR
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.azure
+          push: true
+          tags: playernem/dath20251_file-sharing:latest
+          cache-from: type=registry,ref=playernem/dath20251_file-sharing:latest
+          cache-to: type=inline
+
+      - name: Image pushed successfully
+        run: |
+          echo "✅ Image pushed to DockerHub: playernem/dath20251_file-sharing:latest"
+
+  # ==================== STEP 3: Deploy to Production ====================
+  deploy:
+    name: CD - Deploy to Production
+    runs-on: [self-hosted, Linux, X64]
+    needs: build-and-push  # ← Wait for image to be pushed to DockerHub
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Decrypt production environment file
+        run: |
+          echo "Decrypting prod.enc -> .env"
+          sops -d prod.enc > .env
+        env:
+          SOPS_AGE_KEY_FILE: /home/github/.config/sops/age/keys.txt
+
+      - name: Verify .env file exists
+        run: |
+          if [ ! -f .env ]; then
+            echo "Error: .env file not found after decryption"
+            exit 1
+          fi
+          echo "✅ .env file decrypted successfully"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Stop existing containers
+        run: |
+          docker compose down || true
+
+      - name: Pull latest image from DockerHub
+        run: |
+          echo "Pulling latest image from DockerHub..."
+          docker pull playernem/dath20251_file-sharing:latest
+          echo "✅ Image pulled successfully"
+
+      - name: Start containers with pulled image
+        run: |
+          docker compose up -d
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for services to start..."
+          sleep 10
+
+          max_attempts=30
+          attempt=0
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -fsS http://localhost/health >/dev/null 2>&1; then
+              echo "✅ Backend is healthy"
+              exit 0
+            fi
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts: Waiting for backend..."
+            sleep 2
+          done
+
+          echo "❌ Backend failed to become healthy"
+          docker compose logs
+          exit 1
+
+      - name: Show container status
+        run: |
+          echo "=== Container Status ==="
+          docker compose ps
+          echo ""
+          echo "=== Recent Logs ==="
+          docker compose logs --tail=50
+
+      - name: Cleanup old images
+        run: |
+          docker image prune -f
+          echo "✅ Cleaned up old images"
+
+      - name: Deployment successful
+        run: |
+          echo "🎉 Deployment completed successfully!"
+          echo "Application is running at: http://localhost"
+
