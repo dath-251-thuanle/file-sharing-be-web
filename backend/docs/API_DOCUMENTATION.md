@@ -50,7 +50,7 @@ Project sử dụng **OpenAPI 3.0.4** để định nghĩa API:
 ### Base URL
 
 - Development: `http://localhost:8080/api`
-- Production: `https://api.filesharing.com/api`
+- Production: `https://sharefilehcmut.azurewebsites.net/api`
 
 ### Authentication
 
@@ -77,7 +77,8 @@ Project sử dụng **OpenAPI 3.0.4** để định nghĩa API:
 - `GET /files/{id}/stats` - Lấy thống kê download của file (chỉ owner/admin)
 - `GET /files/{id}/download-history` - Lấy lịch sử download chi tiết (chỉ owner/admin)
 - `GET /files/{shareToken}` - Lấy thông tin file qua share token (public)
-- `GET /files/{shareToken}/download` - Tải file (hỗ trợ password)
+- `GET /files/{shareToken}/download` - Tải file về (hỗ trợ password)
+- `GET /files/{shareToken}/preview` - Xem trước file trong browser (inline display)
 - `DELETE /files/{id}` - Xóa file (chỉ owner)
 
 #### Admin
@@ -114,6 +115,13 @@ Project sử dụng **OpenAPI 3.0.4** để định nghĩa API:
 **Schema:** Xem `pkg/database/schema.sql`
 **Migrations:** Xem `migrations/` folder
 **Demo Queries:** Xem `pkg/database/demo_queries.sql`
+
+## Cloud Storage
+
+Backend sử dụng Azure Blob Storage:
+- **Provider**: Azure
+- **Max File Size**: 50MB
+- **Containers**: Public (file public), Private (file protected)
 
 ## TOTP/2FA Flow
 
@@ -184,6 +192,12 @@ Lấy lịch sử download chi tiết (chỉ owner/admin).
 - `availableTo` không nằm trong quá khứ tại thời điểm upload và không vượt quá `system_policy.maxValidityDays`.
 - Tổng thời gian hiệu lực phải nằm trong giới hạn policy; vi phạm → backend trả lỗi `invalidValidityRange`.
 
+**System Policy:**
+- Default validity: 7 days
+- Min validity: 1 hour, Max validity: 30 days
+- Min password length: 6 characters
+- Admin có thể thay đổi qua `PATCH /admin/policy`
+
 ## Security
 
 ### Bearer Token (JWT)
@@ -194,10 +208,19 @@ Lấy lịch sử download chi tiết (chỉ owner/admin).
 
 ### X-Cron-Secret
 
-- Secret key cho cron job (lưu trong env, không commit vào repo)
-- Nên thiết lập rotation cố định (ví dụ 30/60 ngày); quy trình: phát hành secret mới → cập nhật secret manager/CI → redeploy cron job → thu hồi secret cũ → ghi log thời điểm rotation
-- Dùng cho endpoint `/admin/cleanup`, song song hỗ trợ JWT admin cho thao tác thủ công
-- Gửi qua header: `X-Cron-Secret: <secret>` + áp dụng rate limiting/IP allowlist và log mọi request (timestamp, source, kết quả)
+- Secret key cho cron job (lưu trong env)
+- Dùng cho endpoint `/admin/cleanup`
+- Header: `X-Cron-Secret: <secret>`
+
+### Rate Limiting
+
+- General API: 60 requests/minute
+- File Upload: 10 uploads/hour
+
+### CORS
+
+Production origin: `https://sharefilehcmut.azurewebsites.net`
+Custom headers: `X-Cron-Secret`, `X-File-Password`
 
 ## Download Access Control
 

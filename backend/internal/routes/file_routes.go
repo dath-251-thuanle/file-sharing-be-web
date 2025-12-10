@@ -18,6 +18,9 @@ func RegisterFileRoutes(router *gin.RouterGroup, fileController *controllers.Fil
 	// GET /files/:shareToken/download - Download a file (requires valid Bearer token)
 	router.GET("/:shareToken/download", optionalAuth(authMiddleware), fileController.DownloadFile)
 
+	// GET /files/:shareToken/preview - Preview/stream a file (inline display)
+	router.GET("/:shareToken/preview", optionalAuth(authMiddleware), fileController.PreviewFile)
+
 	// Authenticated routes group
 	authenticated := router.Group("")
 	authenticated.Use(authMiddleware)

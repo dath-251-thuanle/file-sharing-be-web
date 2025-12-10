@@ -61,7 +61,7 @@ cors:
     - "http://localhost:80"
     - "http://localhost:3000"
     - "http://localhost:8080"
-    - "https://filesharing-aja3ayfhhgc8hqbn.indonesiacentral-01.azurewebsites.net"
+    - "https://sharefilehcmut.azurewebsites.net"
   allowed_methods:
     - "GET"
     - "POST"

@@ -28,9 +28,27 @@
   },
   "cors": {
     "allowed_origins": [
-      "https://filesharing.com",
-      "https://www.filesharing.com"
-    ]
+      "https://sharefilehcmut.azurewebsites.net"
+    ],
+    "allowed_methods": [
+      "GET",
+      "POST",
+      "PUT",
+      "DELETE",
+      "PATCH",
+      "OPTIONS"
+    ],
+    "allowed_headers": [
+      "Origin",
+      "Content-Type",
+      "Content-Length",
+      "Accept-Encoding",
+      "X-CSRF-Token",
+      "Authorization",
+      "X-Cron-Secret",
+      "X-File-Password"
+    ],
+    "allow_credentials": true
   },
   "logging": {
     "level": "info",

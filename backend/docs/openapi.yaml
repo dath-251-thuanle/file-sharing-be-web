@@ -20,7 +20,7 @@ info:
 servers:
   - url: http://localhost:8080
     description: Development server
-  - url: https://api.filesharing.com
+  - url: https://sharefilehcmut.azurewebsites.net
     description: Production server
 
 tags:
@@ -1198,6 +1198,153 @@ paths:
                     availableFrom: "2025-11-20T10:00:00Z"
                     hoursUntilAvailable: 6
 
+  /files/{shareToken}/preview:
+    get:
+      tags:
+        - Files
+      summary: Xem trước file (inline preview)
+      description: |
+        Preview file trực tiếp trong browser (không download).
+        
+        **Khác với `/files/{shareToken}/download`:**
+        - Download: `Content-Disposition: attachment` → browser tải file về
+        - Preview: `Content-Disposition: inline` → browser hiển thị file (PDF, images, videos)
+        
+        **Bảo mật:** Áp dụng các lớp bảo mật giống như download endpoint:
+        1. File status check (expired/pending)
+        2. Whitelist check (nếu có `sharedWith`)
+        3. Password check (nếu có password)
+        
+        **Use case:** Xem PDF, hình ảnh, video trực tiếp trong browser mà không cần tải về
+      security:
+        - BearerAuth: []
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/ShareToken'
+        - name: X-File-Password
+          in: header
+          required: false
+          description: Mật khẩu bảo vệ (nếu file có password)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File content (inline display)
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            image/*:
+              schema:
+                type: string
+                format: binary
+            video/*:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: inline; filename="document.pdf"
+            Content-Type:
+              schema:
+                type: string
+                example: application/pdf
+            Content-Length:
+              schema:
+                type: integer
+        '401':
+          description: Thiếu Bearer token khi file có whitelist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missingAuth:
+                  summary: Thiếu Bearer token (file private)
+                  value:
+                    error: Unauthorized
+                    message: This file requires authentication. Please provide a Bearer token
+        '403':
+          description: Sai password, thiếu password, hoặc không có quyền truy cập
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                wrongPassword:
+                  summary: Sai password
+                  value:
+                    error: Incorrect password
+                    message: The file password is incorrect
+                missingPassword:
+                  summary: Thiếu password
+                  value:
+                    error: Password required
+                    message: This file is password-protected. Please provide the password
+                notWhitelisted:
+                  summary: User không trong whitelist
+                  value:
+                    error: Access denied
+                    message: You are not allowed to access this file
+        '404':
+          description: Không tìm thấy file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFound:
+                  summary: Share token không tồn tại
+                  value:
+                    error: Not found
+                    message: File not found
+        '410':
+          description: File đã hết hạn
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  expiredAt:
+                    type: string
+                    format: date-time
+              examples:
+                expired:
+                  summary: File hết hạn
+                  value:
+                    error: File expired
+                    expiredAt: "2025-11-19T16:20:18.619Z"
+        '423':
+          description: File chưa đến thời gian hiệu lực
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  availableFrom:
+                    type: string
+                    format: date-time
+                  hoursUntilAvailable:
+                    type: number
+              examples:
+                pending:
+                  summary: File chưa đến giờ
+                  value:
+                    error: File not yet available
+                    availableFrom: "2025-11-20T10:00:00Z"
+                    hoursUntilAvailable: 6
+
   /admin/cleanup:
     post:
       tags:
@@ -1749,6 +1896,7 @@ components:
           example: 1
         maxFileSizeMB:
           type: integer
+          description: Max file size in MB (currently 50MB for all environments)
           example: 50
         minValidityHours:
           type: integer
