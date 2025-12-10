@@ -152,10 +152,30 @@ jobs:
           echo "Pulling latest image from DockerHub..."
           docker pull playernem/dath20251_file-sharing:latest
           echo "✅ Image pulled successfully"
+          
+          # Show image details to verify
+          echo "=== Image Details ==="
+          docker images playernem/dath20251_file-sharing:latest --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}\t{{.Size}}"
+          
+          # Get image digest for verification
+          image_digest=$(docker inspect playernem/dath20251_file-sharing:latest --format='{{index .RepoDigests 0}}' 2>/dev/null || echo "N/A")
+          echo "Image digest: $image_digest"
 
-      - name: Start containers with pulled image
+      - name: Start containers with pulled image (force recreate)
         run: |
-          docker compose up -d
+          echo "Starting containers with force recreate to ensure new image is used..."
+          docker compose up -d --force-recreate --no-deps app
+          
+          # Verify container is using the new image
+          echo "=== Container Image Verification ==="
+          container_image=$(docker inspect file-sharing-app --format='{{.Config.Image}}' 2>/dev/null || echo "N/A")
+          echo "Container is using image: $container_image"
+          
+          # Wait a moment for container to start
+          sleep 5
+          
+          # Show running containers
+          docker compose ps
 
       - name: Wait for services to be healthy (local check)
         run: |
