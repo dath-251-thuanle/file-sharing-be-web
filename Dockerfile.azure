@@ -34,8 +34,8 @@ WORKDIR /build
 # Copy package files
 COPY frontend/package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install ALL dependencies (including devDependencies) for building
+RUN npm ci
 
 # Copy frontend source
 COPY frontend/ ./
@@ -45,6 +45,12 @@ ENV NEXT_PUBLIC_API_URL=""
 
 # Build Next.js app
 RUN npm run build
+
+# Remove devDependencies and reinstall only production dependencies
+# This optimizes the final image size
+RUN rm -rf node_modules && \
+    npm ci --only=production && \
+    npm cache clean --force
 
 # ==================== Stage 3: Final Production Image ====================
 FROM nginx:alpine
