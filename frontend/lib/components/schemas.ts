@@ -187,6 +187,12 @@ export interface CleanupResponse {
   timestamp: string;
 }
 
+// Public policy snippet (for client validation)
+export interface PolicyLimits {
+  maxFileSizeMB: number;
+  requirePasswordMinLength: number;
+}
+
 // error
 
 // export interface Error {

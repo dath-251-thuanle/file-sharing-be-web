@@ -13,13 +13,14 @@ export interface RegisterFormData {
 
 interface RegisterFormProps {
   formData: RegisterFormData;
-  updateField: (field: keyof RegisterFormData, value: any) => void;
+  updateField: (field: keyof RegisterFormData, value: string) => void;
   handleSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  minPasswordLength: number;
 }
 
 export default class RegisterForm extends Component<RegisterFormProps> {
   render() {
-    const { formData, updateField, handleSubmit } = this.props;
+    const { formData, updateField, handleSubmit, minPasswordLength } = this.props;
 
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -72,7 +73,7 @@ export default class RegisterForm extends Component<RegisterFormProps> {
                 value={formData.password}
                 onChange={(e) => updateField("password", e.target.value)}
                 className="w-full py-3 pl-10 pr-4 text-gray-900 bg-gray-100 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                placeholder="Mật khẩu"
+                placeholder={`Mật khẩu (tối thiểu ${minPasswordLength} ký tự)`}
                 required
               />
             </div>

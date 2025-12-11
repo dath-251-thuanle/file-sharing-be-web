@@ -20,6 +20,9 @@ func SetupRoutes(
 	// API routes group with /api prefix
 	api := router.Group("/api")
 
+	// Public policy limits (max file size, password length)
+	api.GET("/policy/limits", fileController.GetPolicyLimits)
+
 	// Auth routes: /api/auth/*
 	authGroup := api.Group("/auth")
 	RegisterAuthRoutes(authGroup, authController, authMiddleware)

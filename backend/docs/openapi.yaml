@@ -1494,6 +1494,37 @@ paths:
                     error: Forbidden
                     message: You don't have permission to access this resource
 
+  /policy/limits:
+    get:
+      tags:
+        - Public
+      summary: Lấy giới hạn upload công khai
+      description: |
+        Trả về hai thông tin cho client validate trước khi upload:
+        - maxFileSizeMB
+        - requirePasswordMinLength
+
+        Không cần access token hay admin token.
+      responses:
+        '200':
+          description: Giới hạn hệ thống
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyLimits'
+              examples:
+                success:
+                  summary: Giới hạn mặc định
+                  value:
+                    maxFileSizeMB: 50
+                    requirePasswordMinLength: 8
+        '500':
+          description: Lỗi server khi đọc policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
     patch:
       tags:
         - Admin
@@ -1933,6 +1964,18 @@ components:
         requirePasswordMinLength:
           type: integer
           minimum: 4
+          example: 8
+
+    PolicyLimits:
+      type: object
+      properties:
+        maxFileSizeMB:
+          type: integer
+          description: Giới hạn kích thước file upload (MB)
+          example: 50
+        requirePasswordMinLength:
+          type: integer
+          description: Độ dài tối thiểu của mật khẩu (nếu đặt)
           example: 8
 
     User:
