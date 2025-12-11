@@ -264,11 +264,35 @@ jobs:
           frontend_ok=false
           
           while [ $attempt -lt $max_attempts ]; do
-            # Check backend
-            if [ "$backend_ok" = "false" ] && curl -fsS --max-time 10 https://sharefilehcmut.azurewebsites.net/health >/dev/null 2>&1; then
-              echo "✅ Azure Backend is healthy!"
-              curl -s https://sharefilehcmut.azurewebsites.net/health
-              backend_ok=true
+            # Check backend with detailed error logging
+            if [ "$backend_ok" = "false" ]; then
+              # Try health endpoint and capture full response
+              backend_response=$(curl -s --max-time 10 -w "\nHTTP_CODE:%{http_code}\nTIME_TOTAL:%{time_total}\n" https://sharefilehcmut.azurewebsites.net/health 2>&1)
+              http_code=$(echo "$backend_response" | grep "HTTP_CODE:" | cut -d: -f2 | tr -d ' ')
+              time_total=$(echo "$backend_response" | grep "TIME_TOTAL:" | cut -d: -f2 | tr -d ' ')
+              response_body=$(echo "$backend_response" | grep -v "HTTP_CODE:" | grep -v "TIME_TOTAL:" | head -5)
+              
+              if [ "$http_code" = "200" ]; then
+                echo "✅ Azure Backend is healthy! (HTTP $http_code, ${time_total}s)"
+                echo "Response: $response_body"
+                backend_ok=true
+              else
+                # Log detailed error every 10 attempts or on first few attempts
+                if [ $attempt -lt 3 ] || [ $((attempt % 10)) -eq 0 ]; then
+                  echo ""
+                  echo "🔍 Backend diagnostic (attempt $((attempt + 1))/$max_attempts):"
+                  echo "  HTTP Code: ${http_code:-TIMEOUT/ERROR}"
+                  echo "  Response Time: ${time_total:-N/A}s"
+                  echo "  Response Body: ${response_body:-No response}"
+                  
+                  # Try verbose curl to see connection details
+                  if [ $((attempt % 10)) -eq 0 ] && [ $attempt -gt 0 ]; then
+                    echo "  Verbose connection test:"
+                    curl -v --max-time 10 https://sharefilehcmut.azurewebsites.net/health 2>&1 | grep -E "(HTTP|Connection|timeout|refused|502|503|504)" | head -10 || echo "    Connection failed"
+                    echo ""
+                  fi
+                fi
+              fi
             fi
             
             # Check frontend
@@ -278,7 +302,9 @@ jobs:
                 echo "✅ Azure Frontend is healthy (HTTP $http_code)"
                 frontend_ok=true
               elif [ "$http_code" = "502" ] || [ "$http_code" = "503" ]; then
-                echo "⚠️  Azure Frontend returned $http_code (not ready yet, attempt $((attempt + 1))/$max_attempts)"
+                if [ $((attempt % 10)) -eq 0 ]; then
+                  echo "⚠️  Azure Frontend returned $http_code (not ready yet, attempt $((attempt + 1))/$max_attempts)"
+                fi
               fi
             fi
             
@@ -298,13 +324,102 @@ jobs:
             sleep 5
           done
           
+          echo ""
           echo "⚠️  Azure App Service health check results (after 5 minutes):"
           echo "Backend healthy: $backend_ok"
           echo "Frontend healthy: $frontend_ok"
+          
+          # Final comprehensive diagnostic
+          echo ""
+          echo "=== 🔍 FINAL BACKEND DIAGNOSTIC ==="
+          echo ""
+          
+          echo "1. Testing /health endpoint:"
+          health_result=$(curl -v --max-time 10 https://sharefilehcmut.azurewebsites.net/health 2>&1)
+          echo "$health_result" | head -50
+          echo ""
+          
+          echo "2. Testing /api endpoint (should return 404 if backend is up):"
+          api_result=$(curl -v --max-time 10 https://sharefilehcmut.azurewebsites.net/api/ 2>&1)
+          echo "$api_result" | head -30
+          echo ""
+          
+          echo "3. Testing root endpoint:"
+          root_result=$(curl -v --max-time 10 https://sharefilehcmut.azurewebsites.net/ 2>&1)
+          echo "$root_result" | head -20
+          echo ""
+          
+          echo "4. Analyzing error patterns:"
+          if echo "$health_result" | grep -q "502"; then
+            echo "   ❌ HTTP 502 Bad Gateway - Backend service is not running or nginx can't connect to it"
+            echo "   → Check if backend process is running in container"
+            echo "   → Check nginx upstream configuration (should point to localhost:8080)"
+          elif echo "$health_result" | grep -q "503"; then
+            echo "   ❌ HTTP 503 Service Unavailable - Backend is starting or overloaded"
+            echo "   → Backend might still be initializing (database connection, etc.)"
+          elif echo "$health_result" | grep -q "504"; then
+            echo "   ❌ HTTP 504 Gateway Timeout - Backend is not responding"
+            echo "   → Backend might be stuck or crashed"
+          elif echo "$health_result" | grep -q "timeout\|Connection timed out"; then
+            echo "   ❌ Connection Timeout - Backend is not listening on port 8080"
+            echo "   → Check if backend process started successfully"
+            echo "   → Check supervisor logs for backend startup errors"
+          elif echo "$health_result" | grep -q "Connection refused"; then
+            echo "   ❌ Connection Refused - Nothing is listening on port 8080"
+            echo "   → Backend process likely crashed or never started"
+          elif echo "$health_result" | grep -q "curl: (6)"; then
+            echo "   ❌ DNS/Network Error - Cannot resolve hostname"
+            echo "   → Check Azure App Service is running"
+          else
+            echo "   ⚠️  Unknown error - Check full response above"
+          fi
+          echo ""
+          
+          if [ "$backend_ok" = "false" ]; then
+            echo "=== 🛠️  DEBUGGING STEPS ==="
+            echo ""
+            echo "1. Check Azure Portal > App Service > Log stream for real-time logs"
+            echo "   Look for:"
+            echo "   - Backend startup errors"
+            echo "   - Database connection failures"
+            echo "   - Missing environment variables"
+            echo ""
+            echo "2. SSH into container (Azure Portal > App Service > SSH):"
+            echo "   supervisorctl status"
+            echo "   supervisorctl tail backend"
+            echo "   ps aux | grep server"
+            echo "   netstat -tlnp | grep 8080"
+            echo ""
+            echo "3. Check environment variables (Azure Portal > Configuration > Application settings):"
+            echo "   Required:"
+            echo "   - DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_SSLMODE"
+            echo "   - JWT_SECRET"
+            echo "   - APP_PORT=8080 (should be set in supervisor config)"
+            echo ""
+            echo "4. Common issues:"
+            echo "   - Database not accessible (firewall, VNet, wrong credentials)"
+            echo "   - Missing JWT_SECRET (backend will fail to start)"
+            echo "   - Backend binary not executable"
+            echo "   - Backend crashed during startup (check logs for panic/fatal errors)"
+            echo ""
+            echo "5. Test backend directly in container:"
+            echo "   curl http://localhost:8080/health"
+            echo "   curl http://localhost/health"
+            echo ""
+          fi
+          
           if [ "$frontend_ok" = "false" ]; then
             echo "❌ Frontend check failed after 5 minutes - this will cause 502 errors!"
             echo "Check Azure Portal logs for more details"
             exit 1
+          fi
+          
+          # Don't fail if only backend is down, but warn
+          if [ "$backend_ok" = "false" ]; then
+            echo ""
+            echo "⚠️  Warning: Backend is not healthy, but continuing deployment..."
+            echo "You should investigate the backend issue manually."
+            echo "The deployment will complete, but API endpoints will not work."
           fi
 
       - name: Cleanup old images
