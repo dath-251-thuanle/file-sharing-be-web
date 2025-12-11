@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const getBaseUrl = (req: NextRequest): string => {
-  // Ưu tiên URL public đã cấu hình (giữ nguyên /api để phân luồng FE/BE qua nginx)
-  const publicApi = process.env?.NEXT_PUBLIC_API_URL?.trim();
-  if (publicApi) {
-    return publicApi.endsWith("/") ? publicApi.slice(0, -1) : publicApi;
-  }
-
-  // Fallback: lấy host/proto từ header (nginx proxy), mặc định thêm /api
-  const host = req.headers.get("host") || req.headers.get("x-forwarded-host") || "localhost";
-  const proto = req.headers.get("x-forwarded-proto") || "http";
-  return `${proto}://${host}/api`;
+const getBaseUrl = (): string => {
+  const internal = process.env.BACKEND_INTERNAL_URL?.trim();
+  if (internal) return internal.endsWith("/") ? internal.slice(0, -1) : internal;
+  return "http://127.0.0.1:8080/api";
 };
 
 export async function GET(
@@ -29,10 +22,6 @@ export async function GET(
     const tokenFromHeader = authHeader?.startsWith('Bearer ') 
       ? authHeader.substring(7) 
       : null;
-    
-    // ✅ FIX: Check cookie for token (for server-side access)
-    // Cookie is set when user logs in, accessible in API routes
-    // In Next.js 16, cookies are accessed via request.cookies.get()
     let tokenFromCookie: string | null = null;
     try {
       const cookieValue = request.cookies.get('fs_access_token');
@@ -61,18 +50,9 @@ export async function GET(
     const acceptHeader = request.headers.get('Accept') || '';
     const referer = request.headers.get('Referer') || '';
     const secFetchMode = request.headers.get('sec-fetch-mode') || '';
-    
-    // Check if this is a direct browser navigation (user pasted URL in address bar)
-    // vs a fetch/XHR request from frontend
-    // Use sec-fetch-mode for accurate detection:
-    // - 'navigate' = user typed URL or clicked link (browser navigation)
-    // - 'cors' = fetch/XHR from frontend JavaScript
     const isDirectBrowserNavigation = 
       secFetchMode === 'navigate' &&
       acceptHeader.includes('text/html');
-    
-    // Check if request is from browser (for HTML error pages)
-    // Only show HTML error pages for direct browser navigation, not fetch requests
     const isBrowserRequest = isDirectBrowserNavigation;
     
     console.log(`[Download Route] User-Agent:`, userAgent.substring(0, 50));
@@ -80,10 +60,6 @@ export async function GET(
     console.log(`[Download Route] Referer:`, referer);
     console.log(`[Download Route] isDirectBrowserNavigation:`, isDirectBrowserNavigation);
     console.log(`[Download Route] Has accessToken:`, !!accessToken);
-    
-    // ✅ FIX: Nếu là direct browser navigation và không có token (cả header và cookie)
-    // → Redirect ngay đến frontend page (không gọi backend)
-    // Frontend page sẽ tự động check localStorage và download
     if (isDirectBrowserNavigation && !accessToken) {
       const frontendUrl = `/f/${token}?autoDownload=true`;
       console.log(`[Download Route] Direct browser navigation without token, redirecting to: ${frontendUrl}`);
@@ -97,7 +73,7 @@ export async function GET(
       return NextResponse.redirect(redirectUrl);
     }
 
-    const baseUrl = getBaseUrl(request);
+    const baseUrl = getBaseUrl();
     const downloadUrl = `${baseUrl}/files/${token}/download`;
 
     console.log(`[Download] Attempting download for token: ${token}`);
