@@ -16,7 +16,7 @@ export default class Home extends Component {
               Chia sẻ file <span className="text-blue-600">An toàn</span> & <span className="text-blue-600">Nhanh chóng</span>
             </h1>
             <p className="text-lg sm:text-xl text-gray-500 max-w-2xl mx-auto mb-10">
-              Upload file không cần tài khoản. Bảo vệ bằng mật khẩu, xác thực 2 lớp (TOTP) và tự động xóa khi hết hạn.
+              Upload file không cần tài khoản. Bảo vệ bằng mật khẩu, tự động xóa khi hết hạn.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
