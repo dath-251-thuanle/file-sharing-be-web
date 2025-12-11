@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, FormEvent, KeyboardEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
 	CalendarCheck2,
@@ -15,10 +15,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, uploadFile } from "@/lib/api/file";
-import type { FileUploadResponse } from "@/lib/components/schemas";
+import type { FileUploadResponse, PolicyLimits } from "@/lib/components/schemas";
+import { getPolicyLimits } from "@/lib/api/policy";
 
 
-const MAX_FILE_SIZE_MB = 50;
 const ACCEPTED_EXTENSIONS = [
 	"pdf",
 	"doc",
@@ -55,15 +55,33 @@ export default function UploadPage() {
 	const [sharedWith, setSharedWith] = useState<string[]>([]);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [uploadResult, setUploadResult] = useState<FileUploadResponse | null>(null);
+	const [policy, setPolicy] = useState<PolicyLimits | null>(null);
 
 	const shareLink = useMemo(() => {
 		return uploadResult?.file?.shareLink || "";
 	}, [uploadResult]);
 
+	const effectivePolicy = useMemo(
+		() => ({
+			maxFileSizeMB: policy?.maxFileSizeMB ?? 50,
+			minPasswordLength: policy?.requirePasswordMinLength ?? 8,
+		}),
+		[policy]
+	);
+
 	const acceptAttribute = useMemo(
 		() => ACCEPTED_EXTENSIONS.map((ext) => `.${ext}`).join(","),
 		[]
 	);
+
+	useEffect(() => {
+		getPolicyLimits()
+			.then((p) => setPolicy(p))
+			.catch(() => {
+				// Fallback to defaults if endpoint unavailable
+				toast.error("Không tải được giới hạn hệ thống, dùng mặc định.");
+			});
+	}, []);
 
 	const resetForm = () => {
 		setSelectedFile(null);
@@ -87,8 +105,8 @@ export default function UploadPage() {
 		}
 
 		const sizeInMb = file.size / (1024 * 1024);
-		if (sizeInMb > MAX_FILE_SIZE_MB) {
-			toast.error(`Kích thước tối đa ${MAX_FILE_SIZE_MB}MB.`);
+		if (sizeInMb > effectivePolicy.maxFileSizeMB) {
+			toast.error(`Kích thước tối đa ${effectivePolicy.maxFileSizeMB}MB.`);
 			return false;
 		}
 
@@ -184,8 +202,8 @@ export default function UploadPage() {
 			return;
 		}
 
-		if (passwordEnabled && passwordValue.trim().length < 6) {
-			toast.error("Mật khẩu phải có tối thiểu 6 ký tự.");
+		if (passwordEnabled && passwordValue.trim().length < effectivePolicy.minPasswordLength) {
+			toast.error(`Mật khẩu phải có tối thiểu ${effectivePolicy.minPasswordLength} ký tự.`);
 			return;
 		}
 
@@ -363,7 +381,7 @@ export default function UploadPage() {
 								</>
 							)}
 							<p className="mt-4 text-xs text-gray-400">
-								Hỗ trợ: {ACCEPTED_EXTENSIONS.join(", ")} • Tối đa {MAX_FILE_SIZE_MB}MB
+								Hỗ trợ: {ACCEPTED_EXTENSIONS.join(", ")} • Tối đa {effectivePolicy.maxFileSizeMB}MB
 							</p>
 						</label>
 					</section>
@@ -399,7 +417,7 @@ export default function UploadPage() {
 											value={passwordValue}
 											onChange={(event) => setPasswordValue(event.target.value)}
 											className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-											placeholder="Nhập mật khẩu bảo vệ (tối thiểu 6 ký tự)"
+											placeholder={`Nhập mật khẩu bảo vệ (tối thiểu ${effectivePolicy.minPasswordLength} ký tự)`}
 										/>
 										<button
 											type="button"

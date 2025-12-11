@@ -40,6 +40,24 @@ func NewFileController(
 	}
 }
 
+// GetPolicyLimits exposes limited system policy info for client-side validation.
+// GET /policy/limits
+func (fc *FileController) GetPolicyLimits(c *gin.Context) {
+	policy, err := fc.fileService.GetSystemPolicy(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal error",
+			"message": "Failed to load system policy",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"maxFileSizeMB":            policy.MaxFileSizeMB,
+		"requirePasswordMinLength": policy.RequirePasswordMinLength,
+	})
+}
+
 // UploadFile handles file upload
 // POST /files/upload
 func (fc *FileController) UploadFile(c *gin.Context) {
