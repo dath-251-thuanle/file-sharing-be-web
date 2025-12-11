@@ -61,7 +61,7 @@ cors:
     - "http://localhost:80"
     - "http://localhost:3000"
     - "http://localhost:8080"
-    - "https://sharefilehcmut.azurewebsites.net"
+    - "https://dath20251file-sharing-production.up.railway.app"
   allowed_methods:
     - "GET"
     - "POST"

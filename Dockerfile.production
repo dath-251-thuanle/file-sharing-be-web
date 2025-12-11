@@ -1,5 +1,5 @@
 # ============================================
-# Multi-stage Dockerfile for Azure App Service
+# Multi-stage Dockerfile for Production
 # Builds: Backend (Go) + Frontend (Next.js) + Nginx
 # ============================================
 
@@ -131,7 +131,7 @@ priority=30
 environment=NODE_ENV="production",NEXT_PUBLIC_API_URL="",PORT="3000"
 EOF
 
-# Expose port 80 (Azure App Service default)
+# Expose port 80
 EXPOSE 80
 
 # Health check
