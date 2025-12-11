@@ -18,10 +18,9 @@ CONTRIBUTING.md
 *.swp
 *.swo
 
-# Environment files (will be set in Azure)
 .env
 .env.*
-!.env.azure.example
+!.env.production.example
 
 # Logs
 *.log
