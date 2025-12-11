@@ -1,25 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const getBaseUrl = (): string => {
-  // In server-side API routes, use internal Docker service name
-  // BACKEND_URL is for server-side (Docker internal), NEXT_PUBLIC_API_URL is for browser
-  
-  // Method 1: Use BACKEND_URL for server-side (Docker service name)
-  const backendUrl = process.env?.BACKEND_URL;
-  if (backendUrl && backendUrl.trim() !== '') {
-    let url = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
-    if (url.endsWith('/api')) {
-      url = url.slice(0, -4);
-    }
-    return url;
+const getBaseUrl = (req: NextRequest): string => {
+  // Ưu tiên URL public đã cấu hình (giữ nguyên /api để phân luồng FE/BE qua nginx)
+  const publicApi = process.env?.NEXT_PUBLIC_API_URL?.trim();
+  if (publicApi) {
+    return publicApi.endsWith("/") ? publicApi.slice(0, -1) : publicApi;
   }
-  
-  // Fallback: Use service name based on environment
-  const isDev = process.env.NODE_ENV !== 'production';
-  const serviceName = isDev ? 'app-dev' : 'app';
-  const serviceUrl = `http://${serviceName}:8080`;
-  
-  return serviceUrl;
+
+  // Fallback: lấy host/proto từ header (nginx proxy), mặc định thêm /api
+  const host = req.headers.get("host") || req.headers.get("x-forwarded-host") || "localhost";
+  const proto = req.headers.get("x-forwarded-proto") || "http";
+  return `${proto}://${host}/api`;
 };
 
 export async function GET(
@@ -106,8 +97,8 @@ export async function GET(
       return NextResponse.redirect(redirectUrl);
     }
 
-    const baseUrl = getBaseUrl();
-    const downloadUrl = `${baseUrl}/api/files/${token}/download`;
+    const baseUrl = getBaseUrl(request);
+    const downloadUrl = `${baseUrl}/files/${token}/download`;
 
     console.log(`[Download] Attempting download for token: ${token}`);
     console.log(`[Download] Backend URL: ${downloadUrl}`);
