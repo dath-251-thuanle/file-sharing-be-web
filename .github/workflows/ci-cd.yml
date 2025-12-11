@@ -34,7 +34,7 @@ jobs:
 
       - name: Build production image for testing
         run: |
-          docker build -f Dockerfile.production -t file-sharing-azure:test .
+          docker build -f Dockerfile.production -t file-sharing-production:test .
 
       - name: Verify images
         run: |
@@ -67,7 +67,7 @@ jobs:
       - name: Cleanup test images
         if: always()
         run: |
-          docker rmi file-sharing-backend:test file-sharing-frontend:test file-sharing-azure:test || true
+          docker rmi file-sharing-backend:test file-sharing-frontend:test file-sharing-production:test || true
 
   # ==================== STEP 2: Build & Push to DockerHub ====================
   build-and-push:
@@ -164,7 +164,7 @@ jobs:
       - name: Start containers with pulled image (force recreate)
         run: |
           echo "Starting containers with force recreate to ensure new image is used..."
-          docker compose up -d --force-recreate --no-deps app
+          docker compose up -d --force-recreate --pull always --no-deps app
           
           # Verify container is using the new image
           echo "=== Container Image Verification ==="
