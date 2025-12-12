@@ -91,6 +91,7 @@ Sửa lỗi file lớn hơn 10MB bị từ chối không đúng.
 ❌ fix bug
 ❌ WIP
 ❌ sửa lỗi
+❌ đổi code
 ```
 
 ### Nguyên Tắc
@@ -261,3 +262,4 @@ git push -u origin feature/ten-tinh-nang
 ---
 
 Có câu hỏi? Tạo issue với label `question` hoặc đi hỏi. Trong trường hợp bị conflict khi mở pull request, từ từ mà fix nhé =)))
+
