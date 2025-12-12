@@ -1,0 +1,221 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+
+  # ==================== STEP 1: Build & Push to DockerHub ====================
+  build-and-push:
+    name: CD - Build and Push to DockerHub
+    runs-on: [self-hosted, Linux, X64]
+    needs: test  # ← Wait for tests to pass
+    # Only run on push to main/master, not on PR
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.production
+          push: true
+          tags: playernem/dath20251_file-sharing:latest
+          cache-from: type=registry,ref=playernem/dath20251_file-sharing:latest
+          cache-to: type=inline
+
+      - name: Image pushed successfully
+        run: |
+          echo "✅ Image pushed to DockerHub: playernem/dath20251_file-sharing:latest"
+
+  # ==================== STEP 2: Deploy to Production ====================
+  deploy:
+    name: CD - Deploy to Production
+    runs-on: [self-hosted, Linux, X64]
+    needs: build-and-push  # ← Wait for image to be pushed to DockerHub
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SOPS AGE key
+        run: |
+          echo "Setting up SOPS AGE key..."
+          mkdir -p $HOME/.config/sops/age
+          echo "${{ secrets.SOPS_AGE_KEY }}" > $HOME/.config/sops/age/keys.txt
+          chmod 600 $HOME/.config/sops/age/keys.txt
+          echo "✅ AGE key file created"
+
+      - name: Decrypt production environment file
+        run: |
+          echo "Decrypting prod.enc -> .env"
+          sops -d --input-type dotenv --output-type dotenv prod.enc > .env
+        env:
+          SOPS_AGE_KEY_FILE: $HOME/.config/sops/age/keys.txt
+
+      - name: Verify .env file exists
+        run: |
+          if [ ! -f .env ]; then
+            echo "Error: .env file not found after decryption"
+            exit 1
+          fi
+          echo "✅ .env file decrypted successfully"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Stop existing containers
+        run: |
+          docker compose down || true
+
+      - name: Pull latest image from DockerHub
+        run: |
+          echo "Pulling latest image from DockerHub..."
+          docker pull playernem/dath20251_file-sharing:latest
+          echo "✅ Image pulled successfully"
+          
+          # Show image details to verify
+          echo "=== Image Details ==="
+          docker images playernem/dath20251_file-sharing:latest --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}\t{{.Size}}"
+          
+          # Get image digest for verification
+          image_digest=$(docker inspect playernem/dath20251_file-sharing:latest --format='{{index .RepoDigests 0}}' 2>/dev/null || echo "N/A")
+          echo "Image digest: $image_digest"
+
+      - name: Start containers with pulled image (force recreate)
+        run: |
+          echo "Starting containers with force recreate to ensure new image is used..."
+          docker compose up -d --force-recreate --pull always --no-deps app
+          
+          # Verify container is using the new image
+          echo "=== Container Image Verification ==="
+          container_image=$(docker inspect file-sharing-app --format='{{.Config.Image}}' 2>/dev/null || echo "N/A")
+          echo "Container is using image: $container_image"
+          
+          # Wait a moment for container to start
+          sleep 5
+          
+          # Show running containers
+          docker compose ps
+
+      - name: Wait for services to be healthy (local check)
+        run: |
+          echo "Waiting for services to start..."
+          sleep 10
+
+          max_attempts=30
+          attempt=0
+          backend_healthy=false
+          frontend_healthy=false
+          
+          while [ $attempt -lt $max_attempts ]; do
+            # Check backend health
+            if [ "$backend_healthy" = "false" ] && curl -fsS http://localhost/health >/dev/null 2>&1; then
+              echo "✅ Backend is healthy"
+              backend_healthy=true
+            fi
+            
+            # Check frontend (should return HTML, not 502)
+            if [ "$frontend_healthy" = "false" ]; then
+              response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/ 2>/dev/null || echo "000")
+              if [ "$response" = "200" ] || [ "$response" = "304" ]; then
+                echo "✅ Frontend is healthy (HTTP $response)"
+                frontend_healthy=true
+              elif [ "$response" = "502" ] || [ "$response" = "503" ]; then
+                echo "⚠️  Frontend returned $response (not ready yet)"
+              fi
+            fi
+            
+            # Both healthy, exit
+            if [ "$backend_healthy" = "true" ] && [ "$frontend_healthy" = "true" ]; then
+              echo "✅ Both backend and frontend are healthy!"
+              exit 0
+            fi
+            
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts: Backend=$backend_healthy, Frontend=$frontend_healthy"
+            sleep 2
+          done
+
+          echo "❌ Services failed to become healthy"
+          echo "Backend healthy: $backend_healthy"
+          echo "Frontend healthy: $frontend_healthy"
+          docker compose logs --tail=100
+          
+          # Check supervisor status
+          echo ""
+          echo "=== Supervisor Status ==="
+          docker compose exec -T app supervisorctl status 2>/dev/null || echo "Cannot access supervisorctl"
+          
+          exit 1
+
+      - name: Show container status
+        run: |
+          echo "=== Container Status ==="
+          docker compose ps
+          echo ""
+          echo "=== Recent Logs (last 100 lines) ==="
+          docker compose logs --tail=100
+          echo ""
+          echo "=== Supervisor Status ==="
+          docker compose exec -T app supervisorctl status 2>/dev/null || echo "Cannot access supervisorctl"
+          echo ""
+          echo "=== Service Health Check ==="
+          echo "Backend health:"
+          curl -f http://localhost/health && echo " ✅" || echo " ❌"
+          echo ""
+          echo "Frontend check:"
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/ || echo "000")
+          if [ "$http_code" = "502" ] || [ "$http_code" = "503" ]; then
+            echo "❌ Frontend returned HTTP $http_code (Bad Gateway/Service Unavailable)"
+          elif [ "$http_code" = "200" ] || [ "$http_code" = "304" ]; then
+            echo "✅ Frontend is responding (HTTP $http_code)"
+          else
+            echo "⚠️  Frontend returned HTTP $http_code"
+          fi
+
+      - name: Cleanup old images
+        run: |
+          docker image prune -f
+          echo "✅ Cleaned up old images"
+
+      - name: Deployment successful
+        run: |
+          echo "🎉 Deployment completed successfully!"
+          echo ""
+          echo "=== Application URLs ==="
+          echo "Local URL: http://localhost"
+          echo "Health Check: http://localhost/health"
+          echo ""
+          echo "=== Debugging Tips ==="
+          echo "1. Check container logs: docker compose logs -f app"
+          echo "2. Check supervisor status: docker compose exec app supervisorctl status"
+          echo "3. View all logs: docker compose logs --tail=100"
+          echo "4. SSH into container: docker compose exec app sh"
+          echo ""
+          echo "=== Quick Health Check ==="
+          curl -s http://localhost/health || echo "Health endpoint not yet available"
+
