@@ -6,7 +6,7 @@ info:
     - Upload file và tạo link chia sẻ
     - Thiết lập quyền truy cập (public/password-protected/private)
     - Thời gian hiệu lực linh hoạt (from/to)
-    - Bảo vệ bằng mật khẩu hoặc TOTP
+    - Bảo vệ bằng mật khẩu
     - Chia sẻ với danh sách người dùng cụ thể
     - Tự động xóa file hết hạn
   version: 1.0.0
@@ -20,7 +20,7 @@ info:
 servers:
   - url: http://localhost:8080
     description: Development server
-  - url: https://api.filesharing.com
+  - url: https://dath20251file-sharing-production.up.railway.app
     description: Production server
 
 tags:
@@ -427,9 +427,7 @@ paths:
                       id: 550e8400-e29b-41d4-a716-446655440000
                       fileName: report.pdf
                       shareToken: a1b2c3d4e5f6g7h8
-                    totpSetup:
-                      secret: NB2W45DFOIZA====
-                      qrCode: data:image/png;base64,iVBORw0KGgo...
+                      isPublic: false
         '400':
           description: Thiếu file hoặc vi phạm validation (password quá ngắn, cấu hình thời gian không hợp lệ, ... )
           content:
@@ -547,10 +545,12 @@ paths:
                     files:
                       - id: 550e8400-e29b-41d4-a716-446655440001
                         fileName: document.pdf
+                        shareToken: a1b2c3d4e5f6g7h8
                         status: active
                         createdAt: "2025-11-19T10:00:00Z"
                       - id: 550e8400-e29b-41d4-a716-446655440002
                         fileName: old-file.pdf
+                        shareToken: b2c3d4e5f6g7h8i9
                         status: expired
                         createdAt: "2025-11-10T10:00:00Z"
                     pagination:
@@ -611,7 +611,6 @@ paths:
                       shareLink: https://example.com/f/a1b2c3d4e5f6g7h8
                       isPublic: false
                       hasPassword: true
-                      totpEnabled: true
                       availableFrom: "2025-11-10T00:00:00Z"
                       availableTo: "2025-11-17T00:00:00Z"
                       status: active
@@ -991,8 +990,10 @@ paths:
       description: |
         Lấy metadata cơ bản của file qua share token (public endpoint, không cần authentication).
         
-        **Response chỉ trả về thông tin cơ bản:**
-        - `id`, `fileName`, `shareToken`, `status`, `isPublic`, `hasPassword`
+        **Response trả về thông tin cơ bản:**
+        - `id`, `fileName`, `shareToken`, `status`, `isPublic`, `hasPassword`, `fileSize`, `mimeType`
+        
+        **Lưu ý:** `sharedWith` (whitelist) không được trả về ở endpoint này - chỉ có trong `/files/info/{id}` dành cho owner.
       security: []
       parameters:
         - $ref: '#/components/parameters/ShareToken'
@@ -1014,6 +1015,8 @@ paths:
                       status: active
                       isPublic: false
                       hasPassword: true
+                      fileSize: 2048576
+                      mimeType: application/pdf
                 noPassword:
                   summary: File không có password
                   value:
@@ -1024,6 +1027,8 @@ paths:
                       status: active
                       isPublic: true
                       hasPassword: false
+                      fileSize: 1024000
+                      mimeType: application/pdf
         '404':
           description: Không tìm thấy file với shareToken
           content:
@@ -1184,6 +1189,153 @@ paths:
                     availableFrom: "2025-11-20T10:00:00Z"
                     hoursUntilAvailable: 6
 
+  /files/{shareToken}/preview:
+    get:
+      tags:
+        - Files
+      summary: Xem trước file (inline preview)
+      description: |
+        Preview file trực tiếp trong browser (không download).
+        
+        **Khác với `/files/{shareToken}/download`:**
+        - Download: `Content-Disposition: attachment` → browser tải file về
+        - Preview: `Content-Disposition: inline` → browser hiển thị file (PDF, images, videos)
+        
+        **Bảo mật:** Áp dụng các lớp bảo mật giống như download endpoint:
+        1. File status check (expired/pending)
+        2. Whitelist check (nếu có `sharedWith`)
+        3. Password check (nếu có password)
+        
+        **Use case:** Xem PDF, hình ảnh, video trực tiếp trong browser mà không cần tải về
+      security:
+        - BearerAuth: []
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/ShareToken'
+        - name: X-File-Password
+          in: header
+          required: false
+          description: Mật khẩu bảo vệ (nếu file có password)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File content (inline display)
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            image/*:
+              schema:
+                type: string
+                format: binary
+            video/*:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: inline; filename="document.pdf"
+            Content-Type:
+              schema:
+                type: string
+                example: application/pdf
+            Content-Length:
+              schema:
+                type: integer
+        '401':
+          description: Thiếu Bearer token khi file có whitelist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missingAuth:
+                  summary: Thiếu Bearer token (file private)
+                  value:
+                    error: Unauthorized
+                    message: This file requires authentication. Please provide a Bearer token
+        '403':
+          description: Sai password, thiếu password, hoặc không có quyền truy cập
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                wrongPassword:
+                  summary: Sai password
+                  value:
+                    error: Incorrect password
+                    message: The file password is incorrect
+                missingPassword:
+                  summary: Thiếu password
+                  value:
+                    error: Password required
+                    message: This file is password-protected. Please provide the password
+                notWhitelisted:
+                  summary: User không trong whitelist
+                  value:
+                    error: Access denied
+                    message: You are not allowed to access this file
+        '404':
+          description: Không tìm thấy file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFound:
+                  summary: Share token không tồn tại
+                  value:
+                    error: Not found
+                    message: File not found
+        '410':
+          description: File đã hết hạn
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  expiredAt:
+                    type: string
+                    format: date-time
+              examples:
+                expired:
+                  summary: File hết hạn
+                  value:
+                    error: File expired
+                    expiredAt: "2025-11-19T16:20:18.619Z"
+        '423':
+          description: File chưa đến thời gian hiệu lực
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  availableFrom:
+                    type: string
+                    format: date-time
+                  hoursUntilAvailable:
+                    type: number
+              examples:
+                pending:
+                  summary: File chưa đến giờ
+                  value:
+                    error: File not yet available
+                    availableFrom: "2025-11-20T10:00:00Z"
+                    hoursUntilAvailable: 6
+
   /admin/cleanup:
     post:
       tags:
@@ -1191,7 +1343,9 @@ paths:
       summary: Xóa file hết hạn
       description: |
         Xóa file hết hạn (Cron job hoặc Admin endpoint).
-        Yêu cầu X-Cron-Secret header hoặc admin token.
+        **Xác thực:**
+        - Cần **Authorization: Bearer <ADMIN_API_TOKEN>** (giá trị lấy từ biến môi trường `ADMIN_API_TOKEN`)
+        - Hoặc **X-Cron-Secret: <CLEANUP_SECRET>** cho cron nội bộ
         
         **Security best practices:**
         - `X-Cron-Secret` phải được lưu trong môi trường bảo mật, hỗ trợ rotation định kỳ (ví dụ đổi secret hàng tuần/tháng).
@@ -1224,7 +1378,7 @@ paths:
                     deletedFiles: 12
                     timestamp: "2025-11-19T10:00:00Z"
         '401':
-          description: Thiếu hoặc sai Bearer token / X-Cron-Secret
+          description: Thiếu hoặc sai ADMIN_API_TOKEN / X-Cron-Secret
           content:
             application/json:
               schema:
@@ -1235,13 +1389,18 @@ paths:
                   value:
                     error: Unauthorized
                     message: X-Cron-Secret header is required
+                invalidAdminToken:
+                  summary: Thiếu hoặc sai ADMIN_API_TOKEN
+                  value:
+                    error: Unauthorized
+                    message: "Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)"
                 invalidToken:
                   summary: Token không hợp lệ
                   value:
                     error: Unauthorized
                     message: Invalid or expired admin token
         '403':
-          description: Không phải admin hoặc secret sai
+          description: Secret sai hoặc token sai
           content:
             application/json:
               schema:
@@ -1275,7 +1434,10 @@ paths:
       tags:
         - Admin
       summary: Lấy cấu hình hệ thống
-      description: Lấy system policy (chỉ admin)
+      description: |
+        Lấy system policy (admin).
+
+        **Xác thực:** gửi header `Authorization: Bearer <ADMIN_API_TOKEN>` (ADMIN_API_TOKEN lấy từ biến môi trường backend; không dùng access token user).
       responses:
         '200':
           description: System policy
@@ -1294,7 +1456,7 @@ paths:
                     defaultValidityDays: 7
                     requirePasswordMinLength: 8
         '401':
-          description: Thiếu hoặc sai Bearer token
+          description: Thiếu hoặc sai ADMIN_API_TOKEN
           content:
             application/json:
               schema:
@@ -1304,25 +1466,34 @@ paths:
                   summary: Thiếu Authorization header
                   value:
                     error: Unauthorized
-                    message: Bearer token is required
+                    message: "Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)"
+                invalidToken:
+                  summary: Token không hợp lệ
+                  value:
+                    error: Unauthorized
+                    message: Invalid or expired admin token
         '403':
-          description: Không phải admin
+          description: Token sai
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
                 notAdmin:
-                  summary: User không có quyền admin
+                  summary: Admin token không hợp lệ
                   value:
                     error: Forbidden
                     message: You don't have permission to access this resource
 
+  /policy/limits:
     patch:
       tags:
         - Admin
       summary: Cập nhật cấu hình hệ thống
-      description: Cập nhật system policy (chỉ admin)
+      description: |
+        Cập nhật system policy (admin).
+
+        **Xác thực:** gửi header `Authorization: Bearer <ADMIN_API_TOKEN>` (ADMIN_API_TOKEN lấy từ biến môi trường backend; không dùng access token user).
       requestBody:
         required: true
         content:
@@ -1366,7 +1537,7 @@ paths:
                     error: Validation error
                     message: maxValidityDays must be greater than or equal to minValidityHours
         '401':
-          description: Thiếu hoặc sai Bearer token
+          description: Thiếu hoặc sai ADMIN_API_TOKEN
           content:
             application/json:
               schema:
@@ -1376,16 +1547,21 @@ paths:
                   summary: Thiếu Authorization header
                   value:
                     error: Unauthorized
-                    message: Bearer token is required
+                    message: "Admin token is required (Authorization: Bearer <ADMIN_API_TOKEN>)"
+                invalidToken:
+                  summary: Token không hợp lệ
+                  value:
+                    error: Unauthorized
+                    message: Invalid or expired admin token
         '403':
-          description: Không phải admin
+          description: Token sai
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
                 notAdmin:
-                  summary: User không có quyền admin
+                  summary: Admin token không hợp lệ
                   value:
                     error: Forbidden
                     message: You don't have permission to access this resource
@@ -1396,7 +1572,9 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT token từ /auth/login
+      description: |
+        JWT token từ /auth/login (cho user endpoints).
+        Với admin endpoints, gửi `Authorization: Bearer <ADMIN_API_TOKEN>` (lấy từ biến môi trường backend, không phải access token user).
 
     CronSecret:
       type: apiKey
@@ -1494,12 +1672,12 @@ components:
     TOTPVerifyRequest:
       type: object
       required:
-        - userId
+        - cid
         - code
       properties:
         cid:
           type: string
-          description: Challenge ID nhận từ bước /auth/login
+          description: ID của login session (cid) nhận từ bước /auth/login khi requireTOTP=true
           example: 8d4f3bb1-2f52-4a76-b951-7c21ef991abc
         code:
           type: string
@@ -1710,6 +1888,7 @@ components:
           example: 1
         maxFileSizeMB:
           type: integer
+          description: Max file size in MB (currently 50MB for all environments)
           example: 50
         minValidityHours:
           type: integer
