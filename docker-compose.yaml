@@ -1,7 +1,8 @@
 # Unified Docker Compose for Backend + Frontend + Nginx
 # Usage:
-#   Production:  docker compose up -d
-#   Development: docker compose --profile dev up -d
+#   Local (Backend only):  docker compose up -d
+#   Development (Full stack): docker compose --profile dev up -d
+#   Production: docker compose --profile production up -d
 
 services:
   # ==================== DATABASE ====================
@@ -30,8 +31,6 @@ services:
     networks:
       - app-network
     restart: unless-stopped
-    profiles:
-      - dev
 
   # ==================== DATABASE MIGRATIONS ====================
   # NOTE: This service connects to database specified in .env (DB_HOST, DB_USER, etc.)
@@ -55,19 +54,52 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        set -e
+        set +e
         echo "Running migrations with database: $${DB_HOST}:$${DB_PORT}/$${DB_NAME}"
         echo "Waiting for database connection..."
+        DB_URL="postgres://$${DB_USER}:$${DB_PASSWORD}@$${DB_HOST}:$${DB_PORT}/$${DB_NAME}?sslmode=$${DB_SSLMODE}"
+        
+        # Wait for database to be ready (using migrate version as health check)
         for i in 1 2 3 4 5 6 7 8 9 10; do
-          if migrate -path /migrations -database "postgres://$${DB_USER}:$${DB_PASSWORD}@$${DB_HOST}:$${DB_PORT}/$${DB_NAME}?sslmode=$${DB_SSLMODE}" version > /dev/null 2>&1; then
+          if migrate -path /migrations -database "$${DB_URL}" version > /dev/null 2>&1; then
             echo "Database is ready!"
             break
           fi
-          echo "Attempt $${i}/10: Database not ready, waiting 2 seconds..."
-          sleep 2
+          # Also try to connect directly (migrate may fail for other reasons)
+          if [ $$i -eq 10 ]; then
+            echo "Warning: Could not verify database connection, but proceeding anyway..."
+          else
+            echo "Attempt $$i/10: Database not ready, waiting 2 seconds..."
+            sleep 2
+          fi
         done
+        
+        # Check migration version
+        echo "Checking current migration version..."
+        VERSION_OUTPUT=$(migrate -path /migrations -database "$${DB_URL}" version 2>&1)
+        VERSION_EXIT_CODE=$$?
+        
+        # If version check fails, it might mean:
+        # 1. Migration table doesn't exist (fresh DB)
+        # 2. Tables already exist from schema.sql but migration version not set
+        # Try to run migrations first
         echo "Running migrations..."
-        migrate -path /migrations -database "postgres://$${DB_USER}:$${DB_PASSWORD}@$${DB_HOST}:$${DB_PORT}/$${DB_NAME}?sslmode=$${DB_SSLMODE}" up
+        MIGRATE_OUTPUT=$(migrate -path /migrations -database "$${DB_URL}" up 2>&1)
+        MIGRATE_EXIT_CODE=$$?
+        
+        # If migration fails with "already exists" error, force version and retry
+        if [ $$MIGRATE_EXIT_CODE -ne 0 ] && echo "$${MIGRATE_OUTPUT}" | grep -qi "already exists\|relation.*already exists"; then
+          echo "Detected existing tables. Setting migration version to 1..."
+          migrate -path /migrations -database "$${DB_URL}" force 1 2>&1 || true
+          echo "Retrying migrations..."
+          migrate -path /migrations -database "$${DB_URL}" up
+        elif [ $$MIGRATE_EXIT_CODE -ne 0 ]; then
+          echo "Migration failed:"
+          echo "$${MIGRATE_OUTPUT}"
+          exit $$MIGRATE_EXIT_CODE
+        else
+          echo "Migrations completed successfully!"
+        fi
     restart: "no"
     # Note: depends_on removed to allow external database (Aiven)
     # If using local postgres, it will retry until connection is available
@@ -117,8 +149,6 @@ services:
       # postgres dependency removed to allow external database (Aiven)
       # App will retry database connection automatically
     restart: unless-stopped
-    profiles:
-      - dev
 
   # ==================== PRODUCTION - ALL-IN-ONE (Backend + Frontend + Nginx) ====================
   # This service uses pre-built image from DockerHub containing:
@@ -148,6 +178,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    profiles:
+      - production
 
   # ==================== FRONTEND - DEVELOPMENT ====================
   frontend-dev:
