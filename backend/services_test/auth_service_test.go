@@ -2,8 +2,6 @@ package services_test
 
 import (
 	"errors"
-	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -95,8 +92,21 @@ func (m *mockUserRepo) ExistsByEmail(email string) (bool, error) {
 	return m.existsByEmailFunc(email)
 }
 
+func newAuthTestConfig() *config.Config {
+	return &config.Config{
+		JWT: config.JWTConfig{
+			Secret: "test-secret-key-minimum-32-characters-long",
+		},
+		TOTP: config.TOTPConfig{
+			Issuer: "FileSharingTest",
+			Period: 30,
+			Digits: 6,
+		},
+	}
+}
+
 func newTestAuthServiceWithUserRepo(repo repositories.UserRepository) *services.AuthService {
-	cfg := &config.Config{}
+	cfg := newAuthTestConfig()
 	return services.NewAuthService(repo, cfg)
 }
 
@@ -386,11 +396,7 @@ func TestAuthService_SetupTOTP_Success(t *testing.T) {
 		},
 	}
 
-	cfg := &config.Config{
-		JWT: config.JWTConfig{
-			Secret: "test-secret-key-minimum-32-characters-long",
-		},
-	}
+	cfg := newAuthTestConfig()
 	authService := services.NewAuthService(mockRepo, cfg)
 
 	totpSetup, err := authService.SetupTOTP(user.ID)
@@ -436,11 +442,7 @@ func TestAuthService_VerifyTOTP_Success(t *testing.T) {
 		},
 	}
 
-	cfg := &config.Config{
-		JWT: config.JWTConfig{
-			Secret: "test-secret-key-minimum-32-characters-long",
-		},
-	}
+	cfg := newAuthTestConfig()
 	authService := services.NewAuthService(mockRepo, cfg)
 
 	// Generate valid TOTP code
@@ -481,11 +483,7 @@ func TestAuthService_VerifyTOTP_InvalidCode(t *testing.T) {
 		},
 	}
 
-	cfg := &config.Config{
-		JWT: config.JWTConfig{
-			Secret: "test-secret-key-minimum-32-characters-long",
-		},
-	}
+	cfg := newAuthTestConfig()
 	authService := services.NewAuthService(mockRepo, cfg)
 
 	err := authService.VerifyTOTP(user.ID, "000000")
@@ -505,11 +503,7 @@ func TestAuthService_GenerateAccessToken_Success(t *testing.T) {
 		Role:     models.RoleUser,
 	}
 
-	cfg := &config.Config{
-		JWT: config.JWTConfig{
-			Secret: "test-secret-key-minimum-32-characters-long-for-jwt",
-		},
-	}
+	cfg := newAuthTestConfig()
 	authService := services.NewAuthService(nil, cfg)
 
 	token, err := authService.GenerateAccessToken(user)
