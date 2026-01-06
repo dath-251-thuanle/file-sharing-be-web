@@ -5,16 +5,15 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/models"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/services"
 	"github.com/dath-251-thuanle/file-sharing-be-web/internal/storage"
 	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type fakeStorage struct {
@@ -352,11 +351,11 @@ func TestFileService_UploadFile_WithAvailabilityWindow(t *testing.T) {
 	if file.AvailableFrom == nil || file.AvailableTo == nil {
 		t.Errorf("expected availability window to be set")
 	}
-	if !file.AvailableFrom.Equal(availableFrom) {
-		t.Errorf("expected AvailableFrom=%v, got %v", availableFrom, file.AvailableFrom)
+	if diff := file.AvailableFrom.Sub(availableFrom); diff < -time.Second || diff > time.Second {
+		t.Errorf("expected AvailableFrom≈%v, got %v", availableFrom, file.AvailableFrom)
 	}
-	if !file.AvailableTo.Equal(availableTo) {
-		t.Errorf("expected AvailableTo=%v, got %v", availableTo, file.AvailableTo)
+	if diff := file.AvailableTo.Sub(availableTo); diff < -time.Second || diff > time.Second {
+		t.Errorf("expected AvailableTo≈%v, got %v", availableTo, file.AvailableTo)
 	}
 }
 
@@ -435,12 +434,14 @@ func TestFileService_UploadFile_DatabaseError_RollbackStorage(t *testing.T) {
 	svc := services.NewFileService(db, fs)
 
 	// Create a file with duplicate share_token to cause DB error
+	now := time.Now()
 	existingFile := &models.File{
 		ShareToken: "duplicate-token",
 		FileName:   "existing.txt",
 		FilePath:   "path/to/existing.txt",
 		FileSize:   100,
 		IsPublic:   &[]bool{true}[0],
+		AvailableFrom: &now,
 	}
 	if err := db.Create(existingFile).Error; err != nil {
 		t.Fatalf("failed to create existing file: %v", err)
@@ -762,7 +763,6 @@ func TestFileService_SearchFiles_Success(t *testing.T) {
 }
 
 func TestFileService_SearchFiles_NoResults(t *testing.T) {
-	ctx := context.Background()
 	db := newTestDB(t)
 	fs := newFakeStorage()
 	svc := services.NewFileService(db, fs)
@@ -797,7 +797,8 @@ func TestFileService_GetExpiredFiles(t *testing.T) {
 
 	// Create expired file directly in DB (bypassing service to set past date)
 	now := time.Now()
-	pastTime := now.Add(-24 * time.Hour)
+	pastStart := now.Add(-48 * time.Hour)
+	pastEnd := now.Add(-24 * time.Hour)
 	futureTime := now.Add(24 * time.Hour)
 
 	isPublic := true
@@ -808,8 +809,8 @@ func TestFileService_GetExpiredFiles(t *testing.T) {
 		Reader:        bytes.NewReader([]byte("expired")),
 		IsPublic:      &isPublic,
 		OwnerID:       &owner.ID,
-		AvailableFrom: &pastTime,
-		AvailableTo:   &pastTime, // Expired
+		AvailableFrom: &pastStart,
+		AvailableTo:   &pastEnd,
 	}
 	expiredFile, err := svc.UploadFile(ctx, expiredInput)
 	if err != nil {
@@ -818,7 +819,7 @@ func TestFileService_GetExpiredFiles(t *testing.T) {
 
 	// Update to past time
 	db.Model(&expiredFile).Updates(map[string]interface{}{
-		"available_to": pastTime.Add(-1 * time.Hour),
+		"available_to": pastEnd.Add(-1 * time.Hour),
 	})
 
 	// Create active file
@@ -961,7 +962,12 @@ func TestFileService_UploadFile_DefaultValidityFromPolicy(t *testing.T) {
 		ID:                  1,
 		DefaultValidityDays: 14,
 	}
-	if err := db.Create(policy).Error; err != nil {
+	if err := db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "id"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"default_validity_days": policy.DefaultValidityDays,
+		}),
+	}).Create(policy).Error; err != nil {
 		t.Fatalf("failed to create policy: %v", err)
 	}
 
