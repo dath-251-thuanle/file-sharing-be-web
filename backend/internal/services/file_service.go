@@ -142,10 +142,8 @@ func (s *FileService) UploadFile(ctx context.Context, input *UploadInput) (*mode
 		AvailableTo:   availableTo,
 	}
 
-	// Normalize sharedWith emails and exclude owner's email
 	var sharedWithEmails []string
 	if len(input.SharedWithEmails) > 0 && input.OwnerID != nil {
-		// Get owner email to exclude from sharedWith
 		var ownerEmail string
 		if input.OwnerID != nil {
 			var owner models.User
