@@ -1,8 +1,4 @@
 # Unified Docker Compose for Backend + Frontend + Nginx
-# Usage:
-#   Local (Backend only):  docker compose up -d
-#   Development (Full stack): docker compose --profile dev up -d
-#   Production: docker compose --profile production up -d
 
 services:
   # ==================== DATABASE ====================
