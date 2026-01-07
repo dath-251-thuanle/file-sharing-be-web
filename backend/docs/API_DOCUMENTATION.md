@@ -61,31 +61,36 @@ Project sử dụng **OpenAPI 3.0.4** để định nghĩa API:
 
 #### Authentication
 
-- `POST /auth/register` - Đăng ký tài khoản mới
-- `POST /auth/login` - Đăng nhập (trả về token hoặc yêu cầu TOTP)
-- `POST /auth/login/totp` - Xác thực TOTP để hoàn tất đăng nhập
-- `POST /auth/totp/setup` - Thiết lập TOTP cho user (yêu cầu Bearer token)
-- `POST /auth/totp/verify` - Xác minh mã TOTP để kích hoạt 2FA (yêu cầu Bearer token)
-- `POST /auth/logout` - Đăng xuất
-- `GET /user` - Lấy thông tin profile user hiện tại
+- `POST /auth/register` – Đăng ký tài khoản mới (username/email/password required; password minimum 8 characters). Trả về `userId` khi thành công. `409 Conflict` nếu email/username đã dùng.
+- `POST /auth/login` – Đăng nhập bằng email và password. Nếu user chưa bật TOTP, trả về `accessToken`. Nếu đã bật thì trả về `requireTOTP: true` cùng `cid`/thông tin để gọi `/auth/login/totp`.
+- `POST /auth/login/totp` – Hoàn tất đăng nhập khi TOTP được yêu cầu (không cần Bearer token). Yêu cầu `cid` + `code` để đổi lấy `accessToken`.
+- `POST /auth/totp/setup` – Sinh secret + QR code để bật TOTP (cần Bearer token). Trả về `totpSetup` payload.
+- `POST /auth/totp/verify` – Xác minh mã TOTP 6 chữ số để kích hoạt 2FA. Cần Bearer token.
+- `POST /auth/logout` – Đăng xuất (client chỉ cần xóa token).
+- `GET /user` – Lấy profile user hiện tại (id, username, email, role, totpEnabled). Yêu cầu Bearer token.
 
 #### Files
 
-- `POST /files/upload` - Upload file
-- `GET /files/my` - Lấy danh sách file do user hiện tại upload
-- `GET /files/{id}` - Lấy thông tin file theo UUID (chỉ owner/admin)
-- `GET /files/{id}/stats` - Lấy thống kê download của file (chỉ owner/admin)
-- `GET /files/{id}/download-history` - Lấy lịch sử download chi tiết (chỉ owner/admin)
-- `GET /files/{shareToken}` - Lấy thông tin file qua share token (public)
-- `GET /files/{shareToken}/download` - Tải file về (hỗ trợ password)
-- `GET /files/{shareToken}/preview` - Xem trước file trong browser (inline display)
-- `DELETE /files/{id}` - Xóa file (chỉ owner)
+- `POST /files/upload` – Upload file (multipart form-data với `file`, `isPublic`, `password`, `availableFrom`, `availableTo`, `sharedWith`). Anonymous upload chỉ được public. Private uploads yêu cầu Bearer token. Hỗ trợ whitelist email và password validation, thời gian hiệu lực theo `system_policy`.
+- `GET /files/my` – Lấy danh sách file của user hiện tại có pagination (`page`, `limit`, `status`, `sortBy`, `order`) và `summary` trạng thái.
+- `GET /files/info/{id}` – Lấy metadata file đầy đủ theo UUID (owner hoặc admin). Trả về `sharedWith`, owner info, status, `hoursRemaining`.
+- `DELETE /files/info/{id}` – Xóa file theo UUID (owner hoặc admin).
+- `GET /files/stats/{id}` – Lấy thống kê download (owner/admin) từ bảng `file_statistics`.
+- `GET /files/download-history/{id}` – Lấy lịch sử download chi tiết với pagination (owner/admin).
+- `GET /files/{shareToken}` – Lấy metadata giới hạn qua share token (public). Không trả `sharedWith`.
+- `GET /files/{shareToken}/download` – Tải file (binary). Kiểm tra theo thứ tự: trạng thái (`expired/pending`), whitelist (nếu có), password (`X-File-Password`). Có thể sử dụng Bearer token và credential tương ứng.
+- `GET /files/{shareToken}/preview` – Xem inline (PDF/image/video) (áp dụng cùng logic bảo mật như download).
 
 #### Admin
 
-- `POST /admin/cleanup` - Xóa file hết hạn
-- `GET /admin/policy` - Lấy cấu hình hệ thống
-- `PATCH /admin/policy` - Cập nhật cấu hình
+- `POST /admin/cleanup` – Xóa file hết hạn. Yêu cầu Bearer admin token hoặc header `X-Cron-Secret`.
+- `GET /admin/policy` – Lấy system policy (admin token). Trả về giới hạn file size, validity, password length.
+- `PATCH /admin/policy` – Cập nhật system policy (admin token). Yêu cầu payload hợp lệ (`maxValidityDays >= minValidityHours`, ...).
+
+#### Public Policy
+
+- `GET /policy/limits` – Trả về `maxFileSizeMB` và `requirePasswordMinLength` để client validate trước khi upload (public endpoint).
+- `PATCH /policy/limits` – (Admin-only) Cập nhật giới hạn policy công khai; sau khi cập nhật, client có thể đọc lại qua `GET /policy/limits`.
 
 ## Response Codes
 
@@ -101,6 +106,22 @@ Project sử dụng **OpenAPI 3.0.4** để định nghĩa API:
 | 410  | Gone              | File đã hết hạn                    |
 | 413  | Payload Too Large | File quá lớn                         |
 | 423  | Locked            | File chưa đến thời gian hiệu lực |
+
+## Service Tests
+
+Các test của từng service nằm trong thư mục `backend/services_test`. Tài liệu chi tiết có thể xem trong [`backend/services_test/README.md`](../backend/services_test/README.md).
+
+- **Auth service**: kiểm thử tất cả luồng login/register/TOTP (thành công, sai password, duplicate user, setup/verify TOTP, generate token, lấy profile).
+- **File service**: giả lập storage để test upload/download/delete, pagination, search, file status (pending/expired), policy defaults và rollback khi storage hoặc database lỗi.
+- **Helpers**: `newTestDB` reset database sau mỗi test, seed `system_policy`.
+
+Chạy toàn bộ test:
+
+```bash
+cd backend
+go test ./services_test/...
+```
+
 
 ## Database Tables
 
