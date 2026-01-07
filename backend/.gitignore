@@ -157,7 +157,6 @@ Desktop.ini
 .vs/
 
 # Compiled documentation
-*.pdf
 *.html
 
 # Air live reload
